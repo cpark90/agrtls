@@ -1,23 +1,23 @@
 /*
-
 For ESP32 UWB or ESP32 UWB Pro
-
 */
 
 #include <SPI.h>
 #include "DW1000Ranging.h"
 
-#define ANCHOR_ADD "86:17:5B:D5:A9:9A:E2:9C"
+// #define ANCHOR_ADD "86:17:5B:D5:A9:9A:E2:9C"
+// #define ANCHOR_ADD "86:18:5B:D5:A9:9A:E2:9D"
+#define ANCHOR_ADD "86:19:5B:D5:A9:9A:E2:9E"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
 #define SPI_MOSI 23
 #define DW_CS 4
+#define PIN_RST 27
+#define PIN_IRQ 34
 
 // connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4;   // spi select pin
+const uint8_t PIN_SS = 21;   // spi select pin
 
 void setup()
 {
@@ -25,7 +25,7 @@ void setup()
     delay(1000);
     //init the configuration
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-    DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ); //Reset, CS, IRQ pin
+    DW1000Ranging.initCommunication(PIN_RST, DW_CS, PIN_IRQ);
     //define the sketch as anchor. It will be great to dynamically change the type of module
     DW1000Ranging.attachNewRange(newRange);
     DW1000Ranging.attachBlinkDevice(newBlink);
