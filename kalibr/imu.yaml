@@ -1,0 +1,8 @@
+rostopic: /camera/imu
+update_rate: 200.0
+
+accelerometer_noise_density: 0.1
+accelerometer_random_walk: 0.00004
+
+gyroscope_noise_density: 0.01
+gyroscope_random_walk: 2.0e-6
