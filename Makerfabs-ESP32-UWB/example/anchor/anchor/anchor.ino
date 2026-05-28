@@ -7,12 +7,11 @@ For ESP32 UWB or ESP32 UWB Pro
 #include <SPI.h>
 #include "DW1000Ranging.h"
 
-#define ANCHOR_ADD "86:17:5B:D5:A9:9A:E2:9C"
+#define ANCHOR_ADD "A0:00:00:00:00:00:00:03"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
 #define SPI_MOSI 23
-#define DW_CS 4
 
 // connection pins
 const uint8_t PIN_RST = 27; // reset pin
