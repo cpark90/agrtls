@@ -1,11 +1,7 @@
-/*
-
-For ESP32 UWB or ESP32 UWB Pro
-
-*/
-
 #include <SPI.h>
 #include "DW1000Ranging.h"
+
+#define TAG_ADD "00:T0"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
@@ -13,12 +9,11 @@ For ESP32 UWB or ESP32 UWB Pro
 #define DW_CS 4
 
 // connection pins
-const uint8_t PIN_RST = 27; // reset pin
-const uint8_t PIN_IRQ = 34; // irq pin
-const uint8_t PIN_SS = 4;   // spi select pin
+const uint8_t		PIN_RST = 27; // reset pin
+const uint8_t		PIN_IRQ = 34; // irq pin
+const uint8_t		PIN_SS = 4;   // spi select pin
 
-void setup()
-{
+void setup() {
     Serial.begin(115200);
     delay(1000);
     //init the configuration
@@ -32,35 +27,28 @@ void setup()
     //DW1000Ranging.useRangeFilter(true);
 
     //we start the module as a tag
-    DW1000Ranging.startAsTag("7D:00:22:EA:82:60:3B:9C", DW1000.MODE_LONGDATA_RANGE_LOWPOWER);
+    DW1000Ranging.startAsTag(TAG_ADD, DW1000.MODE_LONGDATA_RANGE_LOWPOWER);
 }
 
-void loop()
-{
+void loop() {
     DW1000Ranging.loop();
 }
 
-void newRange()
-{
-    Serial.print("from: ");
+void newRange() {
+    Serial.print("RANGE,");
     Serial.print(DW1000Ranging.getDistantDevice()->getShortAddress(), HEX);
-    Serial.print("\t Range: ");
-    Serial.print(DW1000Ranging.getDistantDevice()->getRange());
-    Serial.print(" m");
-    Serial.print("\t RX power: ");
-    Serial.print(DW1000Ranging.getDistantDevice()->getRXPower());
-    Serial.println(" dBm");
+    Serial.print(",");
+    Serial.print(DW1000Ranging.getDistantDevice()->getRange(), 3);
+    Serial.print(",");
+    Serial.println(DW1000Ranging.getDistantDevice()->getRXPower());
 }
 
-void newDevice(DW1000Device *device)
-{
-    Serial.print("ranging init; 1 device added ! -> ");
-    Serial.print(" short:");
+void newDevice(DW1000Device *device) {
+    Serial.print("NEW,");
     Serial.println(device->getShortAddress(), HEX);
 }
 
-void inactiveDevice(DW1000Device *device)
-{
-    Serial.print("delete inactive device: ");
+void inactiveDevice(DW1000Device *device) {
+    Serial.print("DEL,");
     Serial.println(device->getShortAddress(), HEX);
 }

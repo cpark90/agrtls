@@ -1,13 +1,7 @@
-/*
-
-For ESP32 UWB or ESP32 UWB Pro
-
-*/
-
 #include <SPI.h>
 #include "DW1000Ranging.h"
 
-#define ANCHOR_ADD "86:17:5B:D5:A9:9A:E2:9C"
+#define ANCHOR_ADD "00:A0"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
@@ -19,8 +13,7 @@ const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS = 4;   // spi select pin
 
-void setup()
-{
+void setup() {
     Serial.begin(115200);
     delay(1000);
     //init the configuration
@@ -37,39 +30,27 @@ void setup()
     // DW1000Ranging.startAsAnchor("82:17:5B:D5:A9:9A:E2:9C", DW1000.MODE_LONGDATA_RANGE_ACCURACY);
 
     DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_RANGE_LOWPOWER, false);
-    // DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_SHORTDATA_FAST_LOWPOWER);
-    // DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_FAST_LOWPOWER);
-    // DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_SHORTDATA_FAST_ACCURACY);
-    // DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_FAST_ACCURACY);
-    // DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_RANGE_ACCURACY);
 }
 
-void loop()
-{
+void loop() {
     DW1000Ranging.loop();
 }
 
-void newRange()
-{
-    // Serial.print("from: ");
-    // Serial.print(DW1000Ranging.getDistantDevice()->getShortAddress(), HEX);
-    // Serial.print("\t Range: ");
-    // Serial.print(DW1000Ranging.getDistantDevice()->getRange());
-    // Serial.print(" m");
-    // Serial.print("\t RX power: ");
-    // Serial.print(DW1000Ranging.getDistantDevice()->getRXPower());
-    // Serial.println(" dBm");
+void newRange() {
+    Serial.print("RANGE,");
+    Serial.print(DW1000Ranging.getDistantDevice()->getShortAddress(), HEX);
+    Serial.print(",");
+    Serial.print(DW1000Ranging.getDistantDevice()->getRange(), 3);
+    Serial.print(",");
+    Serial.println(DW1000Ranging.getDistantDevice()->getRXPower());
 }
 
-void newBlink(DW1000Device *device)
-{
-    Serial.print("blink; 1 device added ! -> ");
-    Serial.print(" short:");
+void newDevice(DW1000Device *device) {
+    Serial.print("NEW,");
     Serial.println(device->getShortAddress(), HEX);
 }
 
-void inactiveDevice(DW1000Device *device)
-{
-    Serial.print("delete inactive device: ");
+void inactiveDevice(DW1000Device *device) {
+    Serial.print("DEL,");
     Serial.println(device->getShortAddress(), HEX);
 }

@@ -9,7 +9,7 @@ For ESP32 UWB or ESP32 UWB Pro
 #include <ros.h>
 #include <std_msgs/Float32MultiArray.h>
 
-#define TAG_ADD "T0:00:00:00:00:00:00:00"
+#define TAG_ADD "T0:00"
 
 #define SPI_SCK 18
 #define SPI_MISO 19
@@ -18,11 +18,7 @@ For ESP32 UWB or ESP32 UWB Pro
 // connection pins
 const uint8_t		PIN_RST = 27; // reset pin
 const uint8_t		PIN_IRQ = 34; // irq pin
-const uint8_t		PIN_SS = 21;   // spi select pin
-
-#define FLAG_NEW_RANGE 0x01
-#define FLAG_NEW_DEVICE 0x02
-#define FLAG_DEL_DEVICE 0x04
+const uint8_t		PIN_SS = 4;   // spi select pin
 
 ros::NodeHandle		nh;
 
@@ -74,7 +70,7 @@ void setup()
 	delay(1000);
 	//init the configuration
 	SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
-	
+
 	//ROS
 	nh.initNode();
 	while(!nh.connected()) {
