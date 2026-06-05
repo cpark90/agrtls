@@ -16,11 +16,11 @@ const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS  = 4;  // spi select pin
 
 // ===== WiFi 설정 (본인 환경에 맞게 수정) =====
-const char* WIFI_SSID = "YOUR_SSID";
-const char* WIFI_PASS = "YOUR_PASSWORD";
+const char* WIFI_SSID = "sberry";
+const char* WIFI_PASS = "dlahxpq!";
 
 // 데이터를 받을 PC/서버의 IP와 포트
-const char*    SERVER_IP   = "192.168.0.100";
+const char*    SERVER_IP   = "192.168.0.8";
 const uint16_t SERVER_PORT = 5005;
 
 WiFiUDP udp;
