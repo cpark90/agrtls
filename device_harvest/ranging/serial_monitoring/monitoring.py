@@ -1,30 +1,34 @@
 import sys
 import time
-import re
-import serial
+import socket
 import pyqtgraph as pg
 from PyQt5.QtCore import QTimer
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget
 
 # ==================== 사용자 설정 ====================
-SERIAL_PORT = "/dev/ttyUSB0"       # 본인의 ESP32 연결 포트로 변경 (예: Linux는 '/dev/ttyUSB0')
-BAUD_RATE = 115200         # 시리얼 통신 속도
+LISTEN_IP = "0.0.0.0"      # 모든 인터페이스에서 수신 (보통 그대로 둠)
+LISTEN_PORT = 5005         # ESP32의 SERVER_PORT와 동일하게
 WINDOW_TIME_SEC = 10       # 이동 창(Moving Window) 시간 범위 (10초)
 # ====================================================
 
 class UwbVisualizer(QMainWindow):
 	def __init__(self):
 		super().__init__()
-		self.setWindowTitle("UWB Real-time Moving Window Visualizer")
+		self.setWindowTitle("UWB Real-time Moving Window Visualizer (UDP)")
 		self.resize(800, 600)
 
-		# 시리얼 연결 시도
+		# UDP 소켓 연결 시도
 		try:
-			self.ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=0.1)
-			print(f"Connected to {SERIAL_PORT}")
+			self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			self.sock.bind((LISTEN_IP, LISTEN_PORT))
+			self.sock.setblocking(False)   # 논블로킹 모드 (버퍼 비어있으면 즉시 반환)
+			print(f"Listening on {LISTEN_IP}:{LISTEN_PORT}")
 		except Exception as e:
-			print(f"Serial connection error: {e}")
+			print(f"UDP socket error: {e}")
 			sys.exit(1)
+
+		# 수신 버퍼 (여러 줄이 한 패킷에 합쳐 들어올 경우 대비)
+		self.recv_buffer = ""
 
 		# 데이터 저장용 리스트 (시간, 거리, TX)
 		self.times = []
@@ -65,43 +69,44 @@ class UwbVisualizer(QMainWindow):
 		self.timer.timeout.connect(self.update_data)
 		self.timer.start(20)
 
-	def parse_serial_line(self, line):
-		# 정수 및 소수점 형태의 숫자 매칭 정규식
-
+	def parse_line(self, line):
+		# "RANGE,addr,range,rxpow" 형태 파싱
 		try:
 			parts = line.split(',')
 			if len(parts) >= 4 and parts[0].strip() == "RANGE":
-				# 첫 번째 숫자를 Range, 두 번째 숫자를 TX 값으로 인식
 				val_range = float(parts[2].strip())
 				val_tx = float(parts[3].strip())
-			return val_range, val_tx
+				return val_range, val_tx
 		except ValueError:
 			return None, None
 		return None, None
 
 	def update_data(self):
-		# 시리얼 버퍼에 읽을 데이터가 있는지 확인
-		while self.ser.in_waiting > 0:
+		# UDP 소켓에서 받을 수 있는 모든 패킷을 비움
+		while True:
 			try:
-				line_bytes = self.ser.readline()
-				line = line_bytes.decode('utf-8', errors='ignore').strip()
+				data, _ = self.sock.recvfrom(1024)
+			except BlockingIOError:
+				break   # 더 이상 받을 데이터 없음
+			except Exception as e:
+				print(f"Error reading UDP: {e}")
+				break
 
+			self.recv_buffer += data.decode('utf-8', errors='ignore')
+
+			# 줄바꿈 기준으로 완성된 줄만 처리
+			while '\n' in self.recv_buffer:
+				line, self.recv_buffer = self.recv_buffer.split('\n', 1)
+				line = line.strip()
 				if not line:
 					continue
 
-				# 데이터 파싱
-				val_range, val_tx = self.parse_serial_line(line)
-
+				val_range, val_tx = self.parse_line(line)
 				if val_range is not None and val_tx is not None:
 					current_time = time.time() - self.start_time
-
-					# 데이터 배열에 추가
 					self.times.append(current_time)
 					self.ranges.append(val_range)
 					self.tx_values.append(val_tx)
-
-			except Exception as e:
-				print(f"Error reading serial: {e}")
 
 		# 이동 창(Moving Window) 처리: 현재 시간 기준 WINDOW_TIME_SEC 이전 데이터는 버림
 		if self.times:
@@ -128,10 +133,9 @@ class UwbVisualizer(QMainWindow):
 			self.p1.setXRange(cutoff_time, now, padding=0)
 
 	def closeEvent(self, event):
-		# 프로그램 종료 시 시리얼 포트 닫기
-		if self.ser.is_open:
-			self.ser.close()
-			print("Serial port closed.")
+		# 프로그램 종료 시 소켓 닫기
+		self.sock.close()
+		print("UDP socket closed.")
 		event.accept()
 
 if __name__ == "__main__":
