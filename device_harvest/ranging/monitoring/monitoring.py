@@ -244,6 +244,8 @@ class UwbVisualizer(QMainWindow):
 			parts = line.split(',')
 			if len(parts) >= 4 and parts[0].strip() == "RANGE":
 				dev_id = parts[1].strip()           # short address (앵커/태그 구분 키)
+				if not dev_id.startswith("A0"):
+					return None, None, None
 				val_range = float(parts[2].strip())
 				val_tx = float(parts[3].strip())
 				return dev_id, val_range, val_tx
