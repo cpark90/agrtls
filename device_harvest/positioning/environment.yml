@@ -1,0 +1,9 @@
+name: uwb-positioning
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy>=1.24
+  - pyqt>=5.15          # PyQt5 (conda-forge 패키지명은 'pyqt')
+  - pyqtgraph>=0.13
+  - network
