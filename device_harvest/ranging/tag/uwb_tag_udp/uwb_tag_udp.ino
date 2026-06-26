@@ -47,18 +47,19 @@ void setup() {
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
-    DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ);
-    DW1000.setChannel(DW1000.CHANNEL_1);
-    DW1000.setPreambleCode(DW1000.PREAMBLE_CODE_16MHZ_2);
-    DW1000.setDataRate(DW1000.TRX_RATE_850KBPS);
-    DW1000.setPreambleLength(DW1000.TX_PREAMBLE_LEN_1024);
-    DW1000.commitConfiguration();
+	DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ);
 
-    DW1000Ranging.attachNewRange(newRange);
-    DW1000Ranging.attachNewDevice(newDevice);
-    DW1000Ranging.attachInactiveDevice(inactiveDevice);
+	DW1000Ranging.attachNewRange(newRange);
+	DW1000Ranging.attachNewDevice(newDevice);
+	DW1000Ranging.attachInactiveDevice(inactiveDevice);
 
-    DW1000Ranging.startAsTag(TAG_ADD, DW1000.MODE_LONGDATA_RANGE_ACCURACY);
+	// 모드 + 네트워크 설정은 startAsAnchor 한 곳에서
+	DW1000Ranging.startAsTag(TAG_ADD, DW1000.MODE_LONGDATA_RANGE_ACCURACY, false);
+
+	// 채널만 모드 적용 후 별도로 변경 (모드 프리셋에 채널이 없으므로 안전)
+	DW1000.setChannel(DW1000.CHANNEL_2);
+	DW1000.setPreambleCode(DW1000.PREAMBLE_CODE_64MHZ_9);
+	DW1000.commitConfiguration();
 }
 
 void loop() {
