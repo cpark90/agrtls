@@ -15,35 +15,14 @@ const uint8_t PIN_RST = 27; // reset pin
 const uint8_t PIN_IRQ = 34; // irq pin
 const uint8_t PIN_SS  = 4;  // spi select pin
 
-// ===== WiFi 설정 (본인 환경에 맞게 수정) =====
-const char* WIFI_SSID = "sberry";
-const char* WIFI_PASS = "dlahxpq!";
-
-// 데이터를 받을 PC/서버의 IP와 포트
-const char*    SERVER_IP   = "192.168.0.8";
-const uint16_t SERVER_PORT = 5005;
-
 WiFiUDP udp;
 char packetBuffer[128];
-
-void connectWiFi() {
-    Serial.print("WiFi connecting");
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(300);
-        Serial.print(".");
-    }
-    Serial.print(" connected, IP: ");
-    Serial.println(WiFi.localIP());
-}
 
 void setup() {
     Serial.begin(115200);
     delay(1000);
 
     // DW1000 SPI보다 먼저 WiFi 연결
-    connectWiFi();
 
     SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI);
 
@@ -58,18 +37,11 @@ void setup() {
     DW1000Ranging.attachNewDevice(newDevice);
     DW1000Ranging.attachInactiveDevice(inactiveDevice);
 
-    DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_RANGE_LOWPOWER, false);
+    DW1000Ranging.startAsAnchor(ANCHOR_ADD, DW1000.MODE_LONGDATA_RANGE_ACCURACY, false);
 }
 
 void loop() {
     DW1000Ranging.loop();
-}
-
-// UDP로 문자열 한 줄 전송
-void sendUDP(const char* msg) {
-    udp.beginPacket(SERVER_IP, SERVER_PORT);
-    udp.write((const uint8_t*)msg, strlen(msg));
-    udp.endPacket();
 }
 
 void newRange() {
@@ -80,20 +52,17 @@ void newRange() {
     snprintf(packetBuffer, sizeof(packetBuffer),
              "RANGE,%04X,%.3f,%.2f\n", addr, range, rxpow);
 
-    sendUDP(packetBuffer);
     Serial.print(packetBuffer);   // 디버깅용, 필요 없으면 삭제
 }
 
 void newDevice(DW1000Device *device) {
     snprintf(packetBuffer, sizeof(packetBuffer),
              "NEW,%04X\n", device->getShortAddress());
-    sendUDP(packetBuffer);
     Serial.print(packetBuffer);
 }
 
 void inactiveDevice(DW1000Device *device) {
     snprintf(packetBuffer, sizeof(packetBuffer),
              "DEL,%04X\n", device->getShortAddress());
-    sendUDP(packetBuffer);
     Serial.print(packetBuffer);
 }
