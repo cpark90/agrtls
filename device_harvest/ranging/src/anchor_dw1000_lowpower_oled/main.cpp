@@ -15,7 +15,8 @@
 #define OLED_H 64
 Adafruit_SSD1306 display(OLED_W, OLED_H, &Wire, -1);
 
-#define ANCHOR_ADDR "82:00:5B:D5:A9:9A:E2:9C"
+// 앵커 #1: byte[0]=0x01 → short addr=1 → "A1"
+#define ANCHOR_ADDR "01:00:5B:D5:A9:9A:E2:9C"
 
 static float lastRange = 0.0f;
 static float lastRxp   = 0.0f;
@@ -42,7 +43,9 @@ void newRange() {
     DW1000Device* d = DW1000Ranging.getDistantDevice();
     lastRange = d->getRange();
     lastRxp   = d->getRXPower();
-    logRange("ANCHOR_01", lastRange, lastRxp);
+    char devId[8];
+    shortAddrToId(d->getShortAddress(), devId, sizeof(devId));
+    logRange(devId, lastRange, lastRxp);
     drawOled();
 }
 void newDevice(DW1000Device* d){ Serial.print("# +dev "); Serial.println(d->getShortAddress(),HEX); }

@@ -8,12 +8,15 @@
 #include "rf_config_dw1000.h"
 #include "logging.h"
 
-#define ANCHOR_ADDR "82:00:5B:D5:A9:9A:E2:9C"
+// 앵커 #0: byte[0]=0x00 → short addr=0 → "A0"
+#define ANCHOR_ADDR "00:00:5B:D5:A9:9A:E2:9C"
 
 void newRange() {
     DW1000Device* d = DW1000Ranging.getDistantDevice();
     if (d == nullptr) return;
-    logRange("ANCHOR_01", d->getRange(), d->getRXPower());
+    char devId[8];
+    shortAddrToId(d->getShortAddress(), devId, sizeof(devId));
+    logRange(devId, d->getRange(), d->getRXPower());
 }
 void newDevice(DW1000Device* d){ Serial.print("# +dev "); Serial.println(d->getShortAddress(),HEX); }
 void inactiveDevice(DW1000Device* d){ Serial.print("# -dev "); Serial.println(d->getShortAddress(),HEX); }

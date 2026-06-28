@@ -30,11 +30,15 @@ void setup() {
     //   dwt_setantennadelay(DW3000_ANTENNA_DELAY);
     //
     // 이후 DS-TWR responder 루틴 (POLL 수신 → RESP 송신 → FINAL 수신 → 거리계산)
-    // 계산된 거리/RX Power를 logRange("ANCHOR_01", range, rxp) 로 출력.
+    // 계산된 거리/RX Power를 logRange로 출력:
+    //   char devId[8]; shortAddrToId(tagShortAddr, devId, sizeof(devId));
+    //   logRange(devId, range, rxp);
+    // 앵커 번호는 docs/VARIANTS.md "Short Address Assignment Rule" 참고.
 }
 
 void loop() {
     // TODO: DS-TWR responder 상태머신
     // 거리 산출 시:
-    //   logRange("ANCHOR_01", range_m, rxPower_dBm);
+    //   char devId[8]; shortAddrToId(tagShortAddr, devId, sizeof(devId));
+    //   logRange(devId, range_m, rxPower_dBm);
 }

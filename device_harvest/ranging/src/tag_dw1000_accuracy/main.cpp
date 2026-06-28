@@ -8,12 +8,15 @@
 #include "rf_config_dw1000.h"
 #include "logging.h"
 
-#define TAG_ADDR "7D:00:22:EA:82:60:3B:9C"
+// 태그 #0: byte[0]=0x80 → short addr=128 → "T0"
+#define TAG_ADDR "80:00:22:EA:82:60:3B:9C"
 
 void newRange() {
     DW1000Device* d = DW1000Ranging.getDistantDevice();
     if (d == nullptr) return;
-    logRange("ANCHOR_01", d->getRange(), d->getRXPower());
+    char devId[8];
+    shortAddrToId(d->getShortAddress(), devId, sizeof(devId));
+    logRange(devId, d->getRange(), d->getRXPower());
 }
 void newDevice(DW1000Device* d){ Serial.print("# +dev "); Serial.println(d->getShortAddress(),HEX); }
 void inactiveDevice(DW1000Device* d){ Serial.print("# -dev "); Serial.println(d->getShortAddress(),HEX); }

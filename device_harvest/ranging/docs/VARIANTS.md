@@ -36,6 +36,48 @@
 3. 이 카탈로그 표에 행 추가
 4. `pio run -e {변종명}`으로 빌드 확인
 
+## Short Address Assignment Rule
+
+DW1000에서 `startAsAnchor/Tag(addr, mode, false)` 호출 시 short address는
+EUI-64의 **첫 두 바이트**에서 파생된다 (`short_addr = byte[1]*256 + byte[0]`).
+`byte[1]`을 항상 `0x00`으로 고정하면 `short_addr = byte[0]`.
+
+```
+EUI-64 포맷: "BB:00:XX:XX:XX:XX:XX:XX"
+              └┘ └┘
+              │  고정(0x00)
+              └── short address 결정 바이트 (BB)
+```
+
+| 역할 | byte[0] 범위 | short addr | 표현 | EUI-64 예 |
+|------|-------------|------------|------|-----------|
+| Anchor n | `0x00 + n` (0x00–0x3F) | n (0–63) | `"A{n}"` | `"0n:00:5B:D5:A9:9A:E2:9C"` |
+| Tag n | `0x80 + n` (0x80–0xBF) | 128+n (128–191) | `"T{n}"` | `"(80+n):00:22:EA:82:60:3B:9C"` |
+
+### 현재 변종별 주소 할당
+
+| 변종 | 역할 | 번호 | byte[0] | EUI-64 |
+|------|------|------|---------|--------|
+| `anchor_dw1000_accuracy` | Anchor | 0 | `0x00` | `"00:00:5B:D5:A9:9A:E2:9C"` |
+| `anchor_dw1000_lowpower_oled` | Anchor | 1 | `0x01` | `"01:00:5B:D5:A9:9A:E2:9C"` |
+| `tag_dw1000_accuracy` | Tag | 0 | `0x80` | `"80:00:22:EA:82:60:3B:9C"` |
+| `tag_dw1000_accuracy_wifi` | Tag | 1 | `0x81` | `"81:00:22:EA:82:60:3B:9C"` |
+
+### logRange deviceId 생성
+
+`newRange()` 콜백에서 distant device의 short address를 `shortAddrToId()`로 변환:
+
+```cpp
+char devId[8];
+shortAddrToId(d->getShortAddress(), devId, sizeof(devId));
+logRange(devId, d->getRange(), d->getRXPower());
+```
+
+- 앵커에서 호출 시: distant device = 태그 → `"T0"`, `"T1"`, ...
+- 태그에서 호출 시: distant device = 앵커 → `"A0"`, `"A1"`, ...
+
+`shortAddrToId()`는 `src/common/logging.h`에 정의.
+
 ## 칩별 주의
 
 - **DW1000**: `DW1000Ranging` 고수준 콜백 API 사용. `rf_config_dw1000.h` + `applyRfConfigDW1000()`.

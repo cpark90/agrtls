@@ -19,12 +19,13 @@ static const uint16_t SERVER_PORT = 9000;
 
 WiFiUDP udp;
 
-#define TAG_ADDR "7D:00:22:EA:82:60:3B:9C"
+// 태그 #1: byte[0]=0x81 → short addr=129 → "T1"
+#define TAG_ADDR "81:00:22:EA:82:60:3B:9C"
 
-void sendUdp(float range_m, float rxp_dBm) {
+void sendUdp(const char* devId, float range_m, float rxp_dBm) {
     char buf[96];
-    int n = snprintf(buf, sizeof(buf), "TAG_01,%.3f,%.2f,%lu",
-                     range_m, rxp_dBm, (unsigned long)millis());
+    int n = snprintf(buf, sizeof(buf), "%s,%.3f,%.2f,%lu",
+                     devId, range_m, rxp_dBm, (unsigned long)millis());
     udp.beginPacket(SERVER_IP, SERVER_PORT);
     udp.write((const uint8_t*)buf, n);
     udp.endPacket();
@@ -34,8 +35,10 @@ void newRange() {
     DW1000Device* d = DW1000Ranging.getDistantDevice();
     float r = d->getRange();
     float p = d->getRXPower();
-    logRange("TAG_01", r, p);
-    if (WiFi.status() == WL_CONNECTED) sendUdp(r, p);
+    char devId[8];
+    shortAddrToId(d->getShortAddress(), devId, sizeof(devId));
+    logRange(devId, r, p);
+    if (WiFi.status() == WL_CONNECTED) sendUdp(devId, r, p);
 }
 void newDevice(DW1000Device* d){ Serial.print("# +dev "); Serial.println(d->getShortAddress(),HEX); }
 void inactiveDevice(DW1000Device* d){ Serial.print("# -dev "); Serial.println(d->getShortAddress(),HEX); }

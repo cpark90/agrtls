@@ -30,5 +30,6 @@ void loop() {
     // TODO: DS-TWR initiator 상태머신으로 raw 거리 측정
     // float raw = ...;  float rxp = ...;
     // float filtered = rangeFilter.update(raw);
-    // logRange("TAG_01", filtered, rxp);
+    // char devId[8]; shortAddrToId(anchorShortAddr, devId, sizeof(devId));
+    // logRange(devId, filtered, rxp);
 }
