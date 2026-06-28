@@ -43,7 +43,8 @@
 #define LEN_DATA 90
 
 //Max devices we put in the networkDevices array ! Each DW1000Device is 74 Bytes in SRAM memory for now.
-#define MAX_DEVICES 4
+// CORE 1차: 앵커가 다수 태그(~10)를 추적하도록 확장 (mesh TDMA, docs/ARCHITECTURE_mesh_tdma.md)
+#define MAX_DEVICES 12
 
 //Default Pin for module:
 #define DEFAULT_RST_PIN 9
@@ -98,6 +99,16 @@ public:
 	//ranging functions
 	static int16_t detectMessageType(byte datas[]); // TODO check return type
 	static void loop();
+
+	// --- scheduled single-device polling (CORE TDMA, mesh TDMA 변종용) ---
+	// scheduledMode 가 켜지면 timerTick 의 자동 브로드캐스트 POLL 을 끈다(BLINK 은 유지).
+	// 앱이 pollDevice() 로 한 번에 한 디바이스만 폴해 슬롯/우선순위 스케줄을 구동한다.
+	// 기본 false → 기존 변종 동작 불변.
+	static void setScheduledMode(boolean enabled) { _scheduledMode = enabled; };
+	static void pollDevice(DW1000Device* device);
+	// overhearing: 우리가 추적하지 않는 송신원(다른 앵커 등)의 프레임을 들으면 콜백.
+	static void attachOverheard(void (* handleOverheard)(uint16_t shortAddress, float rxPower)) { _handleOverheard = handleOverheard; };
+
 	static void useRangeFilter(boolean enabled);
 	// Used for the smoothing algorithm (Exponential Moving Average). newValue must be >= 2. Default 15.
 	static void setRangeFilterValue(uint16_t newValue);
@@ -137,6 +148,11 @@ private:
 	static void (* _handleBlinkDevice)(DW1000Device*);
 	static void (* _handleNewDevice)(DW1000Device*);
 	static void (* _handleInactiveDevice)(DW1000Device*);
+	static void (* _handleOverheard)(uint16_t shortAddress, float rxPower);
+
+	// scheduled single-device polling
+	static boolean _scheduledMode;
+	static int16_t _currentPollDevice;   // pollDevice 가 폴 중인 디바이스 index (-1 = 없음)
 	
 	//sketch type (tag or anchor)
 	static int16_t          _type; //0 for tag and 1 for anchor

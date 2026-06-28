@@ -84,6 +84,10 @@ void (* DW1000RangingClass::_handleNewRange)(void) = 0;
 void (* DW1000RangingClass::_handleBlinkDevice)(DW1000Device*) = 0;
 void (* DW1000RangingClass::_handleNewDevice)(DW1000Device*) = 0;
 void (* DW1000RangingClass::_handleInactiveDevice)(DW1000Device*) = 0;
+void (* DW1000RangingClass::_handleOverheard)(uint16_t, float) = 0;
+// scheduled single-device polling (기본 off → 기존 변종 동작 불변)
+boolean DW1000RangingClass::_scheduledMode    = false;
+int16_t DW1000RangingClass::_currentPollDevice = -1;
 
 /* ###########################################################################
  * #### Init and end #######################################################
@@ -499,6 +503,12 @@ void DW1000RangingClass::loop() {
 			
 			
 			if((_networkDevicesNumber == 0) || (myDistantDevice == nullptr)) {
+				// overhearing: 우리가 추적하지 않는 송신원(다른 앵커 등)을 들음 → L2 간섭감지로 보고.
+				// address = 디코드된 송신원 short address, RX power 와 함께 콜백.
+				if(_handleOverheard != 0) {
+					uint16_t overheardShort = (uint16_t)address[1] * 256 + address[0];
+					(*_handleOverheard)(overheardShort, DW1000.getReceivePower());
+				}
 				//we don't have the short address of the device in memory
 				if (DEBUG) {
 					Serial.println("Not found");
@@ -638,9 +648,17 @@ void DW1000RangingClass::loop() {
 					DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
 					//we note activity for our device:
 					myDistantDevice->noteActivity();
-					
+
+					if(_scheduledMode) {
+						// 단일-폴: 방금 폴한 디바이스의 POLL_ACK 면 그 디바이스에 단일 RANGE 전송.
+						// (기존 "마지막 인덱스" 가정은 단일-폴에서 완결되지 않으므로 분기)
+						if(myDistantDevice->getIndex() == _currentPollDevice) {
+							_expectedMsgId = RANGE_REPORT;
+							transmitRange(myDistantDevice);
+						}
+					}
 					//in the case the message come from our last device:
-					if(myDistantDevice->getIndex() == _networkDevicesNumber-1) {
+					else if(myDistantDevice->getIndex() == _networkDevicesNumber-1) {
 						_expectedMsgId = RANGE_REPORT;
 						//and transmit the next message (range) of the ranging protocole (in broadcast)
 						transmitRange(nullptr);
@@ -695,6 +713,15 @@ void DW1000RangingClass::setRangeFilterValue(uint16_t newValue) {
 	}
 }
 
+// scheduledMode 에서 앱이 한 번에 한 디바이스만 폴해 슬롯/우선순위 스케줄을 구동한다.
+// transmitPoll(device) 단일 경로를 쓰고, 완결(POLL_ACK→단일 RANGE)을 위해 대상 index 를 기억.
+void DW1000RangingClass::pollDevice(DW1000Device* device) {
+	if(device == nullptr) return;
+	_currentPollDevice = device->getIndex();
+	_expectedMsgId     = POLL_ACK;
+	transmitPoll(device);
+}
+
 
 /* ###########################################################################
  * #### Private methods and Handlers for transmit & Receive reply ############
@@ -728,7 +755,8 @@ void DW1000RangingClass::resetInactive() {
 
 void DW1000RangingClass::timerTick() {
 	if(_networkDevicesNumber > 0 && counterForBlink != 0) {
-		if(_type == TAG) {
+		// scheduledMode 에서는 자동 브로드캐스트 POLL 을 끈다. 앱이 pollDevice() 로 구동.
+		if(_type == TAG && !_scheduledMode) {
 			_expectedMsgId = POLL_ACK;
 			//send a prodcast poll
 			transmitPoll(nullptr);
