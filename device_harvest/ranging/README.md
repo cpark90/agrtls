@@ -8,8 +8,8 @@ Makerfabs ESP32 UWB(DW1000/DW3000) 앵커·태그 펌웨어. 변종을 PlatformI
 2. calibration/README.md 절차로 안테나 딜레이 캘리브레이션 → 칩별 rf_config 반영
 3. 빌드:
 ```bash
-pio run -e anchor_dw1000_accuracy -t upload
-pio run -e tag_dw1000_accuracy -t upload
+pio run -e anchor_dw1000_accuracy_meshagent -t upload   # 앵커(initiator)
+pio run -e tag_dw1000_responder -t upload                # 태그(responder)
 pio device monitor
 ```
 

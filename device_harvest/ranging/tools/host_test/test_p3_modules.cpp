@@ -1,6 +1,6 @@
-// 호스트 단위테스트 (g++, 라디오/Arduino 없음) — CORE 1차 순수 모듈 검증.
+// Host unit tests (g++, no radio/Arduino) -- verify the pure CORE 1st-scope modules.
 //   build: g++ -std=c++17 -I ../../src/common test_p3_modules.cpp -o t && ./t
-// 4개 모듈: superframe / peer_scheduler / interference / mgm_agent
+// 4 modules: superframe / peer_scheduler / interference / mgm_agent
 #include <cstdio>
 #include <cmath>
 #include <cstdint>
@@ -15,19 +15,19 @@ static bool approx(float a, float b){ return std::fabs(a-b) < 1e-4f; }
 
 static void test_superframe() {
     Superframe sf;
-    sf.begin({4, 100, 10});                 // 4 slots × 100ms, guard 10
-    CHECK(!sf.isMyWorkWindow(1015, 0));     // 미동기 → 닫힘
+    sf.begin({4, 100, 10});                 // 4 slots x 100ms, guard 10
+    CHECK(!sf.isMyWorkWindow(1015, 0));     // unsynced -> closed
     sf.setEpoch(1000);
     CHECK(sf.synced());
     CHECK(sf.superframeLenMs() == 400);
     CHECK(sf.slotIndexNow(1000) == 0);
-    CHECK(!sf.isMyWorkWindow(1000, 0));     // 선행 guard
+    CHECK(!sf.isMyWorkWindow(1000, 0));     // leading guard
     CHECK(sf.isMyWorkWindow(1015, 0));      // work
     CHECK(sf.workRemainingMs(1015, 0) == 75);
-    CHECK(!sf.isMyWorkWindow(1095, 0));     // 후행 guard
+    CHECK(!sf.isMyWorkWindow(1095, 0));     // trailing guard
     CHECK(sf.slotIndexNow(1150) == 1);
     CHECK(!sf.isMyWorkWindow(1150, 0));
-    CHECK(sf.isOthersSlot(1150, 0));        // slot1 work, 내 슬롯0 아님 → overhear 창
+    CHECK(sf.isOthersSlot(1150, 0));        // slot1 work, not my slot 0 -> overhear window
     CHECK(sf.isMyWorkWindow(1415, 0));      // wrap (1000+400+15)
 }
 
@@ -38,17 +38,17 @@ static void test_peer_scheduler() {
     CHECK(ps.tagCount() == 3);
 
     uint16_t pickAddr = 0;
-    CHECK(ps.pick(100, pickAddr) && pickAddr == 100);   // 동점 → 첫 태그
+    CHECK(ps.pick(100, pickAddr) && pickAddr == 100);   // tie -> first tag
     ps.reportResult(100, 100, true, 1.0f, -60.0f);      // good
-    CHECK(ps.pick(200, pickAddr) && pickAddr == 101);   // 100은 방금 폴 → 뒤로
+    CHECK(ps.pick(200, pickAddr) && pickAddr == 101);   // 100 just polled -> to the back
 
-    CHECK(approx(ps.demand(), 3.0f));                   // 전부 weight 1
-    ps.reportResult(102, 200, true, 20.0f, -60.0f);     // far → bad streak 1
+    CHECK(approx(ps.demand(), 3.0f));                   // all weight 1
+    ps.reportResult(102, 200, true, 20.0f, -60.0f);     // far -> bad streak 1
     CHECK(approx(ps.weightOf(102), 0.8f));
     CHECK(approx(ps.demand(), 2.8f));
     for (int k = 0; k < 10; k++) ps.reportResult(102, 200, true, 20.0f, -60.0f);
-    CHECK(approx(ps.weightOf(102), 0.2f));              // 바닥 weightMin
-    ps.reportResult(102, 300, true, 1.0f, -60.0f);      // 회복
+    CHECK(approx(ps.weightOf(102), 0.2f));              // floor weightMin
+    ps.reportResult(102, 300, true, 1.0f, -60.0f);      // recovery
     CHECK(approx(ps.weightOf(102), 1.0f));
 
     CHECK(ps.removeTag(101) && ps.tagCount() == 2);
@@ -61,13 +61,13 @@ static void test_interference() {
     ig.setMyTags(myTags, 2);
 
     uint16_t t2[] = {101, 200};
-    ig.onTagList(2, t2, 2, 0);          // 101 겹침 → shared edge with 2
-    ig.onOverheard(3, -80.0f, 0);       // > thresh → audible with 3
-    ig.onOverheard(4, -95.0f, 0);       // < thresh → 무시
+    ig.onTagList(2, t2, 2, 0);          // 101 overlaps -> shared edge with 2
+    ig.onOverheard(3, -80.0f, 0);       // > thresh -> audible with 3
+    ig.onOverheard(4, -95.0f, 0);       // < thresh -> ignored
     uint16_t heard5[] = {1, 9};
-    ig.onAudibleReport(5, heard5, 2, 0);  // 나(1) 포함 → 5 가 나를 들음 → 이웃
+    ig.onAudibleReport(5, heard5, 2, 0);  // contains me (1) -> 5 hears me -> neighbor
     uint16_t heard6[] = {9};
-    ig.onAudibleReport(6, heard6, 1, 0);  // 나 없음 → 무시
+    ig.onAudibleReport(6, heard6, 1, 0);  // no me -> ignored
     ig.tick(0);
 
     CHECK(ig.neighborCount() == 3);
@@ -76,15 +76,15 @@ static void test_interference() {
 
     uint16_t aud[8];
     uint8_t na = ig.myAudibleList(aud, 8, 0);
-    CHECK(na == 1 && aud[0] == 3);      // 로컬로 들은 건 3뿐
+    CHECK(na == 1 && aud[0] == 3);      // only 3 was heard locally
 
-    ig.tick(500);                        // 아직 lease 내
+    ig.tick(500);                        // still within lease
     CHECK(ig.neighborCount() == 3);
-    ig.tick(2000);                       // lease(1000) 초과 → 전부 만료
+    ig.tick(2000);                       // past lease (1000) -> all expire
     CHECK(ig.neighborCount() == 0);
 }
 
-// --- MGM 3-에이전트 클리크 수렴 시뮬레이션 ---
+// --- MGM 3-agent clique convergence simulation ---
 static void test_mgm_clique() {
     const int N = 3;
     uint16_t ids[N] = {10, 20, 30};
@@ -111,7 +111,7 @@ static void test_mgm_clique() {
             }
     }
 
-    // 충돌-프리(전부 다른 슬롯) + HELD 검증
+    // Verify collision-free (all distinct slots) + HELD
     for (int i = 0; i < N; i++) {
         CHECK(ag[i].state() == MgmState::HELD);
         CHECK(ag[i].conflictCount() == 0);

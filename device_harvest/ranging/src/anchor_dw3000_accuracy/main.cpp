@@ -1,19 +1,19 @@
 /*
- * 변종: anchor_dw3000_accuracy
- * 앵커 / DW3000 / ACCURACY 모드.
+ * Variant: anchor_dw3000_accuracy
+ * Anchor / DW3000 / ACCURACY mode.
  *
- * 주의: DW3000은 DW1000과 라이브러리 API가 완전히 다르다.
- *   Makerfabs DW3000 라이브러리(NConcepts 기반)는 보통 range_tx/range_rx
- *   예제처럼 dwt_* 저수준 API 또는 자체 래퍼를 쓴다.
- *   아래는 구조만 잡은 스켈레톤 — 실제 라이브러리 함수로 채워야 함.
- *   (DW1000의 DW1000Ranging 같은 고수준 콜백 API가 없을 수 있음)
+ * Note: DW3000's library API is completely different from DW1000.
+ *   The Makerfabs DW3000 library (NConcepts) typically uses the low-level dwt_* API or its own
+ *   wrappers, like the range_tx/range_rx examples.
+ *   This is a structural skeleton only -- fill it in with the real library functions.
+ *   (it may not have a high-level callback API like DW1000's DW1000Ranging)
  */
 #include <Arduino.h>
 #include <SPI.h>
 #include "rf_config_dw3000.h"
 #include "logging.h"
 
-// TODO: 실제 DW3000 라이브러리 헤더 include
+// TODO: include the real DW3000 library header
 // #include "dw3000.h"
 
 void setup() {
@@ -22,23 +22,23 @@ void setup() {
 
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI);
 
-    // TODO: DW3000 초기화 (예시 흐름)
+    // TODO: DW3000 init (example flow)
     //   spiBegin(PIN_IRQ, PIN_RST);
     //   spiSelect(PIN_SS);
     //   if (dwt_initialise(...) == DWT_ERROR) { ... }
-    //   dwt_configure(&dw3000_config);  // rf_config_dw3000.h의 DW3000_* 값 사용
+    //   dwt_configure(&dw3000_config);  // use the DW3000_* values from rf_config_dw3000.h
     //   dwt_setantennadelay(DW3000_ANTENNA_DELAY);
     //
-    // 이후 DS-TWR responder 루틴 (POLL 수신 → RESP 송신 → FINAL 수신 → 거리계산)
-    // 계산된 거리/RX Power를 logRange로 출력:
+    // Then the DS-TWR responder routine (recv POLL -> send RESP -> recv FINAL -> compute range).
+    // Emit the computed range / RX power via logRange:
     //   char devId[8]; shortAddrToId(tagShortAddr, devId, sizeof(devId));
     //   logRange(devId, range, rxp);
-    // 앵커 번호는 docs/VARIANTS.md "Short Address Assignment Rule" 참고.
+    // For the anchor number, see docs/VARIANTS.md "Short Address Assignment Rule".
 }
 
 void loop() {
-    // TODO: DS-TWR responder 상태머신
-    // 거리 산출 시:
+    // TODO: DS-TWR responder state machine
+    // when a range is produced:
     //   char devId[8]; shortAddrToId(tagShortAddr, devId, sizeof(devId));
     //   logRange(devId, range_m, rxPower_dBm);
 }

@@ -1,13 +1,14 @@
 /*
- * mgm_agent.h  (칩 독립, 순수)
+ * mgm_agent.h  (chip-independent, pure)
  *
- * L3 분산 슬롯 배정 — single-slot MGM(Maximum Gain Messaging).
- * mesh/UWB 무관: VALUE/GAIN 메시지 구조체를 in/out 으로만 다룬다(콜백 없음, pull 모델).
+ * L3 distributed slot assignment -- single-slot MGM (Maximum Gain Messaging).
+ * Mesh/UWB-agnostic: deals only with VALUE/GAIN message structs in/out (no callbacks, pull model).
  *
- * 라운드 3단계: VALUE 방송 → GAIN 방송 → DECIDE.
- * DECIDE: 이득 Δ>0 이고 이웃 전체보다 Δ가 크면(동률은 id 큰 쪽) 슬롯 이동.
- *   → 이웃 중 한 번에 하나만 이동 → 전역 충돌 단조 비증가(무진동 수렴).
- * 충돌집합(이웃)은 InterferenceGraph 가 매 라운드 setNeighbors() 로 주입.
+ * Round has 3 phases: broadcast VALUE -> broadcast GAIN -> DECIDE.
+ * DECIDE: if gain delta > 0 and it beats every neighbor's delta (ties -> larger id), move slot.
+ *   -> at most one neighbor moves per round -> global conflict is monotonically non-increasing
+ *      (no oscillation).
+ * The conflict set (neighbors) is injected each round by InterferenceGraph via setNeighbors().
  */
 
 #ifndef MGM_AGENT_H
@@ -25,8 +26,8 @@ enum class RoundPhase : uint8_t { IDLE, COLLECT_VALUE, COLLECT_GAIN };
 
 struct MgmConfig {
     uint8_t  numSlots;       // K_s
-    uint16_t roundPeriodMs;  // T_roundNo
-    uint16_t collectMs;      // T_collect (단계별 수집 윈도우)
+    uint16_t roundPeriodMs;  // T_round
+    uint16_t collectMs;      // T_collect (per-phase collection window)
     uint32_t leaseLenMs;
 };
 
@@ -50,7 +51,8 @@ public:
         _hasOutValue = _hasOutGain = false;
     }
 
-    // 매 라운드 InterferenceGraph 의 현재 이웃 id 로 멤버십 갱신(기존 slot/gain 보존).
+    // Refresh membership each round from InterferenceGraph's current neighbor ids
+    // (preserves existing slot/gain for ids that persist).
     void setNeighbors(const uint16_t* ids, uint8_t n) {
         NInfo merged[MGM_MAX_NEIGHBORS];
         uint8_t m = 0;
@@ -132,16 +134,16 @@ private:
         return -1;
     }
 
-    // 슬롯 s 를 점유한 이웃 수.
+    // Number of neighbors occupying slot s.
     uint8_t conflictAt(uint8_t s) const {
-        if (s == MGM_NONE) return 0xFF;  // 미배정은 최악
+        if (s == MGM_NONE) return 0xFF;  // unassigned = worst
         uint8_t c = 0;
         for (uint8_t i = 0; i < _n; i++)
             if (_nb[i].slot != MGM_NONE && _nb[i].slot == s) c++;
         return c;
     }
 
-    // 충돌 최소 슬롯(동률은 낮은 인덱스).
+    // Least-conflict slot (ties -> lowest index).
     uint8_t bestSlot() const {
         uint8_t best = 0; uint8_t bestC = 0xFF;
         for (uint8_t s = 0; s < _cfg.numSlots; s++) {
@@ -151,7 +153,7 @@ private:
         return best;
     }
 
-    // 이번 라운드 GAIN 을 보낸 이웃들보다 내 이득이 큰가(동률은 id 큰 쪽 승).
+    // Does my gain beat every neighbor that sent GAIN this round (ties -> larger id wins)?
     bool winsContest() const {
         for (uint8_t i = 0; i < _n; i++) {
             if (_nb[i].gainRound != _roundNo) continue;

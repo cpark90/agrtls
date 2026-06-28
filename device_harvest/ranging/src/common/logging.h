@@ -1,14 +1,14 @@
 /*
- * logging.h  (칩 독립)
+ * logging.h  (chip-independent)
  *
- * 모든 변종이 공유하는 시리얼 출력 포맷. DW1000/DW3000 무관.
- * 후단(외부 EKF/IMU 융합)의 파서가 이 포맷에 의존하므로 필드 순서를 바꾸지 말 것.
- * 새 필드는 항상 뒤에 append. (CLAUDE.md 규칙)
+ * Serial output format shared by all variants. DW1000/DW3000-agnostic.
+ * The downstream parser (external EKF/IMU fusion) depends on this format, so do not change the
+ * field order. Always append new fields at the end. (CLAUDE.md rule)
  *
- * 포맷(CSV): deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag
+ * Format (CSV): deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag
  *
- * deviceId는 수신 측 distant device의 short address에서 파생.
- *   shortAddrToId() 참고: 앵커→"A{n}", 태그→"T{n}"
+ * deviceId is derived from the distant device's short address.
+ *   see shortAddrToId(): anchor -> "A{n}", tag -> "T{n}"
  */
 
 #ifndef LOGGING_H
@@ -21,10 +21,10 @@
 #define NLOS_RXPOWER_THRESHOLD_DBM   (-82.0f)
 #endif
 
-// short address → human-readable ID
-// 앵커(0x00..0x3F): "A0".."A63"
-// 태그 (0x80..0xBF): "T0".."T63"
-// 규칙: docs/VARIANTS.md "Short Address Assignment Rule" 참고
+// short address -> human-readable ID
+// anchor (0x00..0x3F): "A0".."A63"
+// tag    (0x80..0xBF): "T0".."T63"
+// rule: see docs/VARIANTS.md "Short Address Assignment Rule"
 inline void shortAddrToId(uint16_t addr, char* buf, size_t len) {
     uint8_t lo = (uint8_t)(addr & 0xFF);
     if (lo < 0x40)

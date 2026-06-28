@@ -43,7 +43,7 @@
 #define LEN_DATA 90
 
 //Max devices we put in the networkDevices array ! Each DW1000Device is 74 Bytes in SRAM memory for now.
-// CORE 1차: 앵커가 다수 태그(~10)를 추적하도록 확장 (mesh TDMA, docs/ARCHITECTURE_mesh_tdma.md)
+// CORE 1st scope: raised so an anchor can track many tags (~10) (mesh TDMA, docs/ARCHITECTURE_mesh_tdma.md)
 #define MAX_DEVICES 12
 
 //Default Pin for module:
@@ -56,7 +56,12 @@
 //in us
 #define DEFAULT_REPLY_DELAY_TIME 7000
 
-//sketch type (anchor or tag)
+// Node role (library-internal names).
+//   TAG    = ranging initiator: sends BLINK/POLL and drives the range computation.
+//   ANCHOR = responder: only replies to the initiator's poll.
+// Note (CORE mesh-TDMA): the physical "anchor" is the INITIATOR(=TAG) and the physical "tag" is
+//   the RESPONDER(=ANCHOR) -- roles are inverted. Variant code is clearer using the
+//   startAsInitiator()/startAsResponder() aliases.
 #define TAG 0
 #define ANCHOR 1
 
@@ -81,6 +86,9 @@ public:
 	static void    generalStart();
 	static void    startAsAnchor(char address[], const byte mode[], const bool randomShortAddress = true);
 	static void    startAsTag(char address[], const byte mode[], const bool randomShortAddress = true);
+	// Role aliases (recommended): read as initiator/responder so variant intent is clear. Same behavior.
+	static void    startAsInitiator(char address[], const byte mode[], const bool randomShortAddress = true) { startAsTag(address, mode, randomShortAddress); }
+	static void    startAsResponder(char address[], const byte mode[], const bool randomShortAddress = true) { startAsAnchor(address, mode, randomShortAddress); }
 	static boolean addNetworkDevices(DW1000Device* device, boolean shortAddress);
 	static boolean addNetworkDevices(DW1000Device* device);
 	static void    removeNetworkDevices(int16_t index);
@@ -100,13 +108,13 @@ public:
 	static int16_t detectMessageType(byte datas[]); // TODO check return type
 	static void loop();
 
-	// --- scheduled single-device polling (CORE TDMA, mesh TDMA 변종용) ---
-	// scheduledMode 가 켜지면 timerTick 의 자동 브로드캐스트 POLL 을 끈다(BLINK 은 유지).
-	// 앱이 pollDevice() 로 한 번에 한 디바이스만 폴해 슬롯/우선순위 스케줄을 구동한다.
-	// 기본 false → 기존 변종 동작 불변.
+	// --- scheduled single-device polling (CORE TDMA, for mesh-TDMA variants) ---
+	// When scheduledMode is on, timerTick's auto-broadcast POLL is disabled (BLINK is kept).
+	// The app drives one-device-at-a-time polling via pollDevice() to run a slot/priority schedule.
+	// Default false -> existing variants unchanged.
 	static void setScheduledMode(boolean enabled) { _scheduledMode = enabled; };
 	static void pollDevice(DW1000Device* device);
-	// overhearing: 우리가 추적하지 않는 송신원(다른 앵커 등)의 프레임을 들으면 콜백.
+	// overhearing: callback when we hear a frame from an untracked source (e.g. another anchor).
 	static void attachOverheard(void (* handleOverheard)(uint16_t shortAddress, float rxPower)) { _handleOverheard = handleOverheard; };
 
 	static void useRangeFilter(boolean enabled);
@@ -152,7 +160,7 @@ private:
 
 	// scheduled single-device polling
 	static boolean _scheduledMode;
-	static int16_t _currentPollDevice;   // pollDevice 가 폴 중인 디바이스 index (-1 = 없음)
+	static int16_t _currentPollDevice;   // index of the device pollDevice is polling (-1 = none)
 	
 	//sketch type (tag or anchor)
 	static int16_t          _type; //0 for tag and 1 for anchor

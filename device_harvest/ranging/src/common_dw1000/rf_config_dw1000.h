@@ -1,10 +1,10 @@
 /*
  * rf_config_dw1000.h
  *
- * DW1000 계열 변종의 RF 설정 + 핀. CHIP_DW1000 빌드에서만 사용.
- * RFMODE_ACCURACY / RFMODE_LOWPOWER / RFMODE_FAST 매크로로 모드 선택.
+ * RF config + pins for DW1000-family variants. Used only in CHIP_DW1000 builds.
+ * Select the mode via the RFMODE_ACCURACY / RFMODE_LOWPOWER / RFMODE_FAST macro.
  *
- * 4개 파라미터(채널/코드/데이터레이트/프리앰블)는 앵커·태그가 동일해야 통신됨.
+ * The 4 parameters (channel/code/data-rate/preamble) must match between anchor and tag to talk.
  */
 
 #ifndef RF_CONFIG_DW1000_H
@@ -12,7 +12,7 @@
 
 #include <DW1000.h>
 
-// ---- 핀 (Makerfabs ESP32 UWB Pro) ----
+// ---- pins (Makerfabs ESP32 UWB Pro) ----
 #define PIN_RST   27
 #define PIN_SS    4
 #define PIN_IRQ   34
@@ -20,13 +20,13 @@
 #define PIN_MISO  19
 #define PIN_MOSI  23
 
-// OLED I2C (lowpower_oled 등 디스플레이 변종용)
+// OLED I2C (for display variants)
 #define PIN_I2C_SDA  4
 #define PIN_I2C_SCL  5
 
 #define RFMODE_ACCURACY
 
-// ---- RF 모드별 파라미터 ----
+// ---- per-mode RF parameters ----
 #if defined(RFMODE_ACCURACY)
   #define RF_DATA_RATE        DW1000.TRX_RATE_110KBPS
   #define RF_PREAMBLE_LENGTH  DW1000.TX_PREAMBLE_LEN_2048
@@ -48,9 +48,9 @@
 
 #define RF_CHANNEL            DW1000.CHANNEL_2
 
-// ---- 안테나 딜레이 ----
+// ---- antenna delay ----
 #define RF_ANTENNA_DELAY_DEFAULT  16384
-// TODO: calibration/ 절차로 실측한 값으로 교체.
+// TODO: replace with a value measured via the calibration/ procedure.
 #define RF_ANTENNA_DELAY          RF_ANTENNA_DELAY_DEFAULT
 
 #if RF_ANTENNA_DELAY == RF_ANTENNA_DELAY_DEFAULT

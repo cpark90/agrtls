@@ -1,14 +1,14 @@
 /*
- * peer_scheduler.h  (칩 독립, 순수)
+ * peer_scheduler.h  (chip-independent, pure)
  *
- * L4 앵커 내 태그 스케줄러. "내 슬롯 안에서 어느 태그를 폴할지" 결정.
- * 최초 요청(업데이트마다 페널티 + 먼/약한 태그 우선순위 하향)을 그대로 구현.
+ * L4 intra-anchor tag scheduler. Decides "which tag to poll inside my slot".
+ * Implements the original request (penalty per update + lower priority for far/weak tags).
  *
- * 점수 = (now - lastPolled) * agingRate(t)  (오래 기다린 태그가 높음).
- * 폴 후 lastPolled=now 로 리셋(=페널티, 뒤로 밀림).
- * agingRate(t) = agingRateBase * w(t), w(t)=max(weightMin, 1 - badStreak/badStreakLimit).
- *   → 먼/약한(badStreak↑) 태그는 천천히 차올라 덜 폴린다.
- * demand = Σ w(t) 는 L3(앵커 간 수요배분) 입력.
+ * score = (now - lastPolled) * agingRate(t)  (a tag that waited longer ranks higher).
+ * After polling, lastPolled = now (the penalty -> sent to the back).
+ * agingRate(t) = agingRateBase * w(t), w(t) = max(weightMin, 1 - badStreak/badStreakLimit).
+ *   -> far/weak tags (badStreak up) ramp up slowly and are polled less often.
+ * demand = sum of w(t) is the input to L3 (inter-anchor demand split).
  */
 
 #ifndef PEER_SCHEDULER_H
@@ -22,10 +22,10 @@
 #define PS_NONE 0xFFFF
 
 struct PeerSchedulerConfig {
-    float   agingRateBase;   // 점수/ms
+    float   agingRateBase;   // score per ms
     float   farThreshM;      // FAR
     float   weakRxpDbm;      // WEAK
-    uint8_t badStreakLimit;  // 이 값에서 가중치 바닥
+    uint8_t badStreakLimit;  // weight floor reached at this streak
     float   weightMin;       // w_min
 };
 
@@ -55,7 +55,7 @@ public:
 
     uint8_t tagCount() const { return _n; }
 
-    // 최대 점수 태그 선택(상태 비변경). 폴 결과는 reportResult 로 반영.
+    // Pick the max-score tag (does not mutate). Report the poll result via reportResult.
     bool pick(uint32_t nowMs, uint16_t& outAddr) const {
         if (_n == 0) return false;
         int best = -1;
@@ -68,7 +68,8 @@ public:
         return true;
     }
 
-    // TWR 결과 반영. 성공/실패 무관 lastPolled 갱신(실패 태그 독점 방지).
+    // Apply the TWR result. lastPolled is updated regardless of success (prevents a failing
+    // tag from monopolizing the schedule).
     void reportResult(uint16_t addr, uint32_t nowMs, bool ok, float range_m, float rxp_dBm) {
         int i = indexOf(addr);
         if (i < 0) return;
@@ -79,7 +80,7 @@ public:
             _t[i].lastRxp   = rxp_dBm;
             bad = (range_m > _cfg.farThreshM) || (rxp_dBm < _cfg.weakRxpDbm);
         } else {
-            bad = true;  // 실패는 먼/약한 정황으로 간주
+            bad = true;  // a failed exchange counts as a far/weak symptom
         }
         if (bad) {
             if (_t[i].badStreak < _cfg.badStreakLimit) _t[i].badStreak++;

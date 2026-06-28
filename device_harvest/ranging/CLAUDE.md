@@ -22,8 +22,8 @@ Makerfabs ESP32 UWB 기반 정밀 위치추적 펌웨어. **여러 앵커/태그
 
 ### 빌드 / 업로드
 ```bash
-pio run -e anchor_dw1000_accuracy           # 특정 변종 빌드
-pio run -e tag_dw1000_accuracy_wifi -t upload
+pio run -e anchor_dw1000_accuracy_meshagent           # 특정 변종 빌드
+pio run -e tag_dw1000_responder -t upload
 pio device monitor                          # 115200
 pio run                                       # default_envs(대표 변종)만
 ```
@@ -113,4 +113,4 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - 정확도 이슈는 안테나 딜레이/캘리브레이션을 가장 먼저 의심.
 - 코드 수정은 변경 전/후 diff로 제시.
 - arduino-cli 명령 사용 금지. PlatformIO 기준.
-- 주석과 .md 파일 작성에만 한글을 사용하고 이외에는 영어로 작성.
+- .md 파일 작성에만 한글을 사용하고 주석을 포함한 이외에는 영어로 작성.

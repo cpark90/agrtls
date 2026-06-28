@@ -1,12 +1,13 @@
 /*
- * interference.h  (칩 독립, 순수)
+ * interference.h  (chip-independent, pure)
  *
- * L2 융합 간섭그래프. 두 신호의 합집합으로 간섭 이웃 C(i)를 만든다:
- *   - shared-tag (mesh TAGLIST): 내 태그와 겹치는 앵커
- *   - audible (UWB overhearing + mesh AUDIBLE): 내가 직접 들었거나, 상대가 나를 듣는다고 보고
- * 각 간선은 lastHeard 리스로 에이징(재배치/전원 churn 대응).
+ * L2 fused interference graph. Builds the interfering-neighbor set C(i) from the union of two
+ * signals:
+ *   - shared-tag (mesh TAGLIST): anchors whose tag set overlaps mine
+ *   - audible (UWB overhearing + mesh AUDIBLE): anchors I heard directly, or that report hearing me
+ * Each edge is lease-aged by lastHeard (handles relocation / power churn).
  *
- * 단일 채널 1차 가정이므로 N1/N2 구분 없이 "간섭하면 이웃".
+ * Single-channel 1st-scope assumption: no N1/N2 distinction -> "interferes => neighbor".
  */
 
 #ifndef INTERFERENCE_H
@@ -38,14 +39,14 @@ public:
 
     // --- inputs ---
 
-    // 로컬 UWB overhearing: 앵커 id 를 rxp 로 들음.
+    // Local UWB overhearing: heard anchor id at rxp.
     void onOverheard(uint16_t id, float rxp_dBm, uint32_t nowMs) {
         if (id == _myId || rxp_dBm < _thresh) return;
         Entry* e = entryFor(id);
         if (e) e->lastLocalHear = stamp(nowMs);
     }
 
-    // mesh AUDIBLE: fromId 가 heard[] 를 듣는다고 보고. 그 중 내가 있으면 fromId 가 나를 들음 → 이웃.
+    // mesh AUDIBLE: fromId reports hearing heard[]. If I am in it, fromId hears me -> neighbor.
     void onAudibleReport(uint16_t fromId, const uint16_t* heard, uint8_t n, uint32_t nowMs) {
         if (fromId == _myId) return;
         for (uint8_t i = 0; i < n; i++) {
@@ -57,7 +58,7 @@ public:
         }
     }
 
-    // mesh TAGLIST: fromId 의 태그집합. 내 태그와 겹치면 shared-tag 간선.
+    // mesh TAGLIST: fromId's tag set. If it overlaps mine -> shared-tag edge.
     void onTagList(uint16_t fromId, const uint16_t* tagIds, uint8_t n, uint32_t nowMs) {
         if (fromId == _myId) return;
         for (uint8_t i = 0; i < n; i++)
@@ -69,7 +70,7 @@ public:
                 }
     }
 
-    // 만료 간선 제거 + 이웃 id 리스트 갱신.
+    // Drop expired edges + refresh the neighbor id list.
     void tick(uint32_t nowMs) {
         uint8_t k = 0;
         for (uint8_t i = 0; i < _n; i++) {
@@ -90,7 +91,7 @@ public:
         return false;
     }
 
-    // 내가 로컬로 듣는(fresh) 앵커들 → mesh AUDIBLE 로 게시.
+    // Anchors I currently hear locally (fresh) -> publish as mesh AUDIBLE.
     uint8_t myAudibleList(uint16_t* out, uint8_t maxN, uint32_t nowMs) const {
         uint8_t c = 0;
         for (uint8_t i = 0; i < _n && c < maxN; i++) {
@@ -102,12 +103,12 @@ public:
 private:
     struct Entry {
         uint16_t id;
-        uint32_t lastLocalHear;       // 0 = 없음 (stamp 는 1부터)
+        uint32_t lastLocalHear;       // 0 = none (stamp is 1-based)
         uint32_t lastReportedHearsMe;
         uint32_t lastShared;
     };
 
-    // 0을 "없음"으로 쓰기 위해 타임스탬프를 1-기반으로 저장.
+    // Store timestamps 1-based so 0 can mean "none".
     static uint32_t stamp(uint32_t nowMs) { return nowMs + 1; }
 
     bool fresh(uint32_t s, uint32_t nowMs) const {

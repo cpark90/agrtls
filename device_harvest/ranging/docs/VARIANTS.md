@@ -18,21 +18,21 @@
 
 | 변종 (env) | role | chip | rfmode | features | 용도 |
 |---|---|---|---|---|---|
-| `anchor_dw1000_accuracy` | anchor | DW1000 | accuracy | — | 기본 앵커 |
-| `anchor_dw1000_lowpower_oled` | anchor | DW1000 | lowpower | OLED | 저전력 + 화면표시 앵커 |
-| `tag_dw1000_accuracy` | tag | DW1000 | accuracy | — | 기본 태그 |
-| `tag_dw1000_accuracy_wifi` | tag | DW1000 | accuracy | WiFi(UDP) | 원격 전송 태그 |
+| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | CORE mesh-TDMA 앵커 = **initiator**(태그를 스케줄 폴). HW 검증됨 |
+| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만). 주소는 `-D TAG_ID=n` |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 앵커 (스켈레톤) |
 | `tag_dw3000_fast_filtered` | tag | DW3000 | fast | filtered | 고속+필터 태그 (스켈레톤) |
-| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | CORE mesh-TDMA 앵커 = **initiator**(태그를 스케줄 폴). F-a 골격 |
-| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만) |
+
+> 구 브로드캐스트 DW1000 변종(`anchor_dw1000_accuracy`, `tag_dw1000_accuracy`,
+> `..._lowpower_oled`, `..._accuracy_wifi`)은 mesh-TDMA 역할반전 변종으로 대체되어 제거됨.
 
 ## CORE mesh-TDMA 역할 반전 (주의)
 
 `*_meshagent` / `*_responder` 변종은 **물리 명칭과 mf-DW1000 역할이 뒤바뀐다**:
-- 물리 **앵커**(`anchor_..._meshagent`) = mf-DW1000 **initiator**(`startAsTag`) — 앵커가 태그를 폴.
-- 물리 **태그**(`tag_..._responder`) = mf-DW1000 **responder**(`startAsAnchor`) — 폴에 응답만.
+- 물리 **앵커**(`anchor_..._meshagent`) = **initiator** — `startAsInitiator()` 로 시작, 태그를 폴.
+- 물리 **태그**(`tag_..._responder`) = **responder** — `startAsResponder()` 로 시작, 폴에 응답만.
 
+`startAsInitiator()/startAsResponder()` 는 `startAsTag()/startAsAnchor()` 의 가독성 별칭(동작 동일).
 근거·설계는 `docs/ARCHITECTURE_mesh_tdma.md`, `docs/DESIGN_FLOW_mesh_tdma.md`(Pivot 4~5) 참고.
 스케줄 폴링은 라이브러리 `setScheduledMode(true)` + `pollDevice()` 로 구동(하위호환 가드드).
 
@@ -69,10 +69,10 @@ EUI-64 포맷: "BB:00:XX:XX:XX:XX:XX:XX"
 
 | 변종 | 역할 | 번호 | byte[0] | EUI-64 |
 |------|------|------|---------|--------|
-| `anchor_dw1000_accuracy` | Anchor | 0 | `0x00` | `"00:00:5B:D5:A9:9A:E2:9C"` |
-| `anchor_dw1000_lowpower_oled` | Anchor | 1 | `0x01` | `"01:00:5B:D5:A9:9A:E2:9C"` |
-| `tag_dw1000_accuracy` | Tag | 0 | `0x80` | `"80:00:22:EA:82:60:3B:9C"` |
-| `tag_dw1000_accuracy_wifi` | Tag | 1 | `0x81` | `"81:00:22:EA:82:60:3B:9C"` |
+| `anchor_dw1000_accuracy_meshagent` | Anchor(initiator) | 0 | `0x00` | `"00:00:5B:D5:A9:9A:E2:9C"` |
+| `tag_dw1000_responder` (`-D TAG_ID=n`) | Tag(responder) | n | `0x80+n` | `"(80+n):00:22:EA:82:60:3B:9C"` |
+
+태그는 보드마다 `-D TAG_ID=n` 으로 byte[0]=0x80+n 을 주입 → 다중 태그 검증 시 T0/T1/T2…
 
 ### logRange deviceId 생성
 

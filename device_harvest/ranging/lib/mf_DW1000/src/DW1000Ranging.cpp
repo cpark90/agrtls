@@ -85,7 +85,7 @@ void (* DW1000RangingClass::_handleBlinkDevice)(DW1000Device*) = 0;
 void (* DW1000RangingClass::_handleNewDevice)(DW1000Device*) = 0;
 void (* DW1000RangingClass::_handleInactiveDevice)(DW1000Device*) = 0;
 void (* DW1000RangingClass::_handleOverheard)(uint16_t, float) = 0;
-// scheduled single-device polling (기본 off → 기존 변종 동작 불변)
+// scheduled single-device polling (default off -> existing variants unchanged)
 boolean DW1000RangingClass::_scheduledMode    = false;
 int16_t DW1000RangingClass::_currentPollDevice = -1;
 
@@ -503,22 +503,14 @@ void DW1000RangingClass::loop() {
 			
 			
 			if((_networkDevicesNumber == 0) || (myDistantDevice == nullptr)) {
-				// overhearing: 우리가 추적하지 않는 송신원(다른 앵커 등)을 들음 → L2 간섭감지로 보고.
-				// address = 디코드된 송신원 short address, RX power 와 함께 콜백.
+				// overhearing: heard an untracked source (e.g. another anchor) -> report to L2 sensing.
+				// address = decoded source short address, passed to the callback with RX power.
 				if(_handleOverheard != 0) {
 					uint16_t overheardShort = (uint16_t)address[1] * 256 + address[0];
 					(*_handleOverheard)(overheardShort, DW1000.getReceivePower());
 				}
-				//we don't have the short address of the device in memory
-				if (DEBUG) {
-					Serial.println("Not found");
-					/*
-					Serial.print("unknown: ");
-					Serial.print(address[0], HEX);
-					Serial.print(":");
-					Serial.println(address[1], HEX);
-					*/
-				}
+				// untracked device -> not a ranging target (only overhearing handled above).
+				if (DEBUG) Serial.println("Not found");
 				return;
 			}
 			
@@ -636,12 +628,8 @@ void DW1000RangingClass::loop() {
 				}
 			}
 			else if(_type == TAG) {
-				// get message and parse
+				// unexpected message -> ignore (the next round / timer retries).
 				if(messageType != _expectedMsgId) {
-					// unexpected message, start over again
-					//not needed ?
-					return;
-					_expectedMsgId = POLL_ACK;
 					return;
 				}
 				if(messageType == POLL_ACK) {
@@ -650,8 +638,8 @@ void DW1000RangingClass::loop() {
 					myDistantDevice->noteActivity();
 
 					if(_scheduledMode) {
-						// 단일-폴: 방금 폴한 디바이스의 POLL_ACK 면 그 디바이스에 단일 RANGE 전송.
-						// (기존 "마지막 인덱스" 가정은 단일-폴에서 완결되지 않으므로 분기)
+						// single-poll: if this is the POLL_ACK from the device we just polled, send it a single RANGE.
+						// (the original "last index" assumption never completes for single-poll, so branch here)
 						if(myDistantDevice->getIndex() == _currentPollDevice) {
 							_expectedMsgId = RANGE_REPORT;
 							transmitRange(myDistantDevice);
@@ -691,9 +679,8 @@ void DW1000RangingClass::loop() {
 					}
 				}
 				else if(messageType == RANGE_FAILED) {
-					//not needed as we have a timer;
+					// nothing to do; the timer handles retries.
 					return;
-					_expectedMsgId = POLL_ACK;
 				}
 			}
 		}
@@ -713,8 +700,9 @@ void DW1000RangingClass::setRangeFilterValue(uint16_t newValue) {
 	}
 }
 
-// scheduledMode 에서 앱이 한 번에 한 디바이스만 폴해 슬롯/우선순위 스케줄을 구동한다.
-// transmitPoll(device) 단일 경로를 쓰고, 완결(POLL_ACK→단일 RANGE)을 위해 대상 index 를 기억.
+// In scheduledMode the app polls one device at a time to run a slot/priority schedule.
+// Uses the transmitPoll(device) single path and remembers the target index so the exchange
+// completes (POLL_ACK -> single RANGE).
 void DW1000RangingClass::pollDevice(DW1000Device* device) {
 	if(device == nullptr) return;
 	_currentPollDevice = device->getIndex();
@@ -755,7 +743,7 @@ void DW1000RangingClass::resetInactive() {
 
 void DW1000RangingClass::timerTick() {
 	if(_networkDevicesNumber > 0 && counterForBlink != 0) {
-		// scheduledMode 에서는 자동 브로드캐스트 POLL 을 끈다. 앱이 pollDevice() 로 구동.
+		// In scheduledMode the auto-broadcast POLL is disabled; the app drives it via pollDevice().
 		if(_type == TAG && !_scheduledMode) {
 			_expectedMsgId = POLL_ACK;
 			//send a prodcast poll
@@ -818,8 +806,9 @@ void DW1000RangingClass::transmitRangingInit(DW1000Device* myDistantDevice) {
 	
 	copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
 
-	// 다중 태그가 같은 BLINK 에 RANGING_INIT 을 동시 응답하면 충돌해 발견이 누락된다.
-	// 자기 short address 하위 3비트로 응답 시점을 결정적으로 스태거(겹침 방지, 최대 8개).
+	// If multiple tags reply to the same BLINK with RANGING_INIT at once they collide and discovery
+	// is missed. Stagger the reply deterministically by the low 3 bits of our own short address
+	// (avoids overlap for up to 8 tags).
 	uint8_t slot = _currentShortAddress[0] & 0x07;
 	DW1000Time delay = DW1000Time((uint16_t)(DEFAULT_REPLY_DELAY_TIME * (1 + slot)),
 	                              DW1000Time::MICROSECONDS);
@@ -863,8 +852,8 @@ void DW1000RangingClass::transmitPoll(DW1000Device* myDistantDevice) {
 
 		data[SHORT_MAC_LEN]   = POLL;
 		data[SHORT_MAC_LEN+1] = 1;
-		// responder 의 POLL 파서는 broadcast 와 동일한 디바이스 엔트리(short addr 2B + replyTime 2B)를
-		// 기대한다. 단일-폴도 그 포맷으로 1개만 채운다. (단일-폴 완결의 핵심 수정)
+		// The responder's POLL parser expects the same device entry as broadcast (short addr 2B +
+		// replyTime 2B). Fill exactly one entry in that format for single-poll. (key single-poll fix)
 		myDistantDevice->setReplyTime(DEFAULT_REPLY_DELAY_TIME);
 		memcpy(data+SHORT_MAC_LEN+2, myDistantDevice->getByteShortAddress(), 2);
 		uint16_t replyTime = myDistantDevice->getReplyTime();
@@ -926,7 +915,7 @@ void DW1000RangingClass::transmitRange(DW1000Device* myDistantDevice) {
 		_globalMac.generateShortMACFrame(data, _currentShortAddress, myDistantDevice->getByteShortAddress());
 		data[SHORT_MAC_LEN]   = RANGE;
 		data[SHORT_MAC_LEN+1] = 1;
-		// responder 의 RANGE 파서는 broadcast 와 동일한 17B 디바이스 엔트리를 기대한다.
+		// The responder's RANGE parser expects the same 17B device entry as broadcast.
 		// short addr(2) + timePollSent(5)@+4 + timePollAckReceived(5)@+9 + timeRangeSent(5)@+14.
 		DW1000Time deltaTime     = DW1000Time(DEFAULT_REPLY_DELAY_TIME, DW1000Time::MICROSECONDS);
 		DW1000Time timeRangeSent = DW1000.setDelay(deltaTime);
