@@ -390,7 +390,7 @@ void DW1000RangingClass::loop() {
 		
 		// TODO cc
 		int messageType = detectMessageType(data);
-		
+
 		if(messageType != POLL_ACK && messageType != POLL && messageType != RANGE)
 			return;
 		
@@ -817,8 +817,13 @@ void DW1000RangingClass::transmitRangingInit(DW1000Device* myDistantDevice) {
 	data[LONG_MAC_LEN] = RANGING_INIT;
 	
 	copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
-	
-	transmit(data);
+
+	// 다중 태그가 같은 BLINK 에 RANGING_INIT 을 동시 응답하면 충돌해 발견이 누락된다.
+	// 자기 short address 하위 3비트로 응답 시점을 결정적으로 스태거(겹침 방지, 최대 8개).
+	uint8_t slot = _currentShortAddress[0] & 0x07;
+	DW1000Time delay = DW1000Time((uint16_t)(DEFAULT_REPLY_DELAY_TIME * (1 + slot)),
+	                              DW1000Time::MICROSECONDS);
+	transmit(data, delay);
 }
 
 void DW1000RangingClass::transmitPoll(DW1000Device* myDistantDevice) {
@@ -855,12 +860,16 @@ void DW1000RangingClass::transmitPoll(DW1000Device* myDistantDevice) {
 		_timerDelay = DEFAULT_TIMER_DELAY;
 		
 		_globalMac.generateShortMACFrame(data, _currentShortAddress, myDistantDevice->getByteShortAddress());
-		
+
 		data[SHORT_MAC_LEN]   = POLL;
 		data[SHORT_MAC_LEN+1] = 1;
+		// responder 의 POLL 파서는 broadcast 와 동일한 디바이스 엔트리(short addr 2B + replyTime 2B)를
+		// 기대한다. 단일-폴도 그 포맷으로 1개만 채운다. (단일-폴 완결의 핵심 수정)
+		myDistantDevice->setReplyTime(DEFAULT_REPLY_DELAY_TIME);
+		memcpy(data+SHORT_MAC_LEN+2, myDistantDevice->getByteShortAddress(), 2);
 		uint16_t replyTime = myDistantDevice->getReplyTime();
-		memcpy(data+SHORT_MAC_LEN+2, &replyTime, sizeof(uint16_t)); // todo is code correct?
-		
+		memcpy(data+SHORT_MAC_LEN+2+2, &replyTime, 2);
+
 		copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
 	}
 	
@@ -915,14 +924,17 @@ void DW1000RangingClass::transmitRange(DW1000Device* myDistantDevice) {
 	}
 	else {
 		_globalMac.generateShortMACFrame(data, _currentShortAddress, myDistantDevice->getByteShortAddress());
-		data[SHORT_MAC_LEN] = RANGE;
-		// delay sending the message and remember expected future sent timestamp
-		DW1000Time deltaTime = DW1000Time(_replyDelayTimeUS, DW1000Time::MICROSECONDS);
-		//we get the device which correspond to the message which was sent (need to be filtered by MAC address)
-		myDistantDevice->timeRangeSent = DW1000.setDelay(deltaTime);
-		myDistantDevice->timePollSent.getTimestamp(data+1+SHORT_MAC_LEN);
-		myDistantDevice->timePollAckReceived.getTimestamp(data+6+SHORT_MAC_LEN);
-		myDistantDevice->timeRangeSent.getTimestamp(data+11+SHORT_MAC_LEN);
+		data[SHORT_MAC_LEN]   = RANGE;
+		data[SHORT_MAC_LEN+1] = 1;
+		// responder 의 RANGE 파서는 broadcast 와 동일한 17B 디바이스 엔트리를 기대한다.
+		// short addr(2) + timePollSent(5)@+4 + timePollAckReceived(5)@+9 + timeRangeSent(5)@+14.
+		DW1000Time deltaTime     = DW1000Time(DEFAULT_REPLY_DELAY_TIME, DW1000Time::MICROSECONDS);
+		DW1000Time timeRangeSent = DW1000.setDelay(deltaTime);
+		memcpy(data+SHORT_MAC_LEN+2, myDistantDevice->getByteShortAddress(), 2);
+		myDistantDevice->timeRangeSent = timeRangeSent;
+		myDistantDevice->timePollSent.getTimestamp(data+SHORT_MAC_LEN+4);
+		myDistantDevice->timePollAckReceived.getTimestamp(data+SHORT_MAC_LEN+9);
+		myDistantDevice->timeRangeSent.getTimestamp(data+SHORT_MAC_LEN+14);
 		copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
 	}
 	

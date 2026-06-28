@@ -24,6 +24,17 @@
 | `tag_dw1000_accuracy_wifi` | tag | DW1000 | accuracy | WiFi(UDP) | 원격 전송 태그 |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 앵커 (스켈레톤) |
 | `tag_dw3000_fast_filtered` | tag | DW3000 | fast | filtered | 고속+필터 태그 (스켈레톤) |
+| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | CORE mesh-TDMA 앵커 = **initiator**(태그를 스케줄 폴). F-a 골격 |
+| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만) |
+
+## CORE mesh-TDMA 역할 반전 (주의)
+
+`*_meshagent` / `*_responder` 변종은 **물리 명칭과 mf-DW1000 역할이 뒤바뀐다**:
+- 물리 **앵커**(`anchor_..._meshagent`) = mf-DW1000 **initiator**(`startAsTag`) — 앵커가 태그를 폴.
+- 물리 **태그**(`tag_..._responder`) = mf-DW1000 **responder**(`startAsAnchor`) — 폴에 응답만.
+
+근거·설계는 `docs/ARCHITECTURE_mesh_tdma.md`, `docs/DESIGN_FLOW_mesh_tdma.md`(Pivot 4~5) 참고.
+스케줄 폴링은 라이브러리 `setScheduledMode(true)` + `pollDevice()` 로 구동(하위호환 가드드).
 
 ## 새 변종 추가 절차
 

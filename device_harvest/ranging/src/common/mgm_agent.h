@@ -25,7 +25,7 @@ enum class RoundPhase : uint8_t { IDLE, COLLECT_VALUE, COLLECT_GAIN };
 
 struct MgmConfig {
     uint8_t  numSlots;       // K_s
-    uint16_t roundPeriodMs;  // T_round
+    uint16_t roundPeriodMs;  // T_roundNo
     uint16_t collectMs;      // T_collect (단계별 수집 윈도우)
     uint32_t leaseLenMs;
 };
@@ -37,7 +37,7 @@ class MgmAgent {
 public:
     MgmAgent()
         : _myId(0), _slot(MGM_NONE), _state(MgmState::SEEKING),
-          _phase(RoundPhase::IDLE), _round(0), _nextRoundAt(0), _phaseStart(0),
+          _phase(RoundPhase::IDLE), _roundNo(0), _nextRoundAt(0), _phaseStart(0),
           _n(0), _proposedSlot(0), _myGain(0),
           _hasOutValue(false), _hasOutGain(false) {
         _cfg = MgmConfig{16, 500, 200, 3600};
@@ -46,7 +46,7 @@ public:
     void begin(uint16_t myId, const MgmConfig& cfg) {
         _myId = myId; _cfg = cfg;
         _slot = MGM_NONE; _state = MgmState::SEEKING; _phase = RoundPhase::IDLE;
-        _round = 0; _nextRoundAt = 0; _n = 0;
+        _roundNo = 0; _nextRoundAt = 0; _n = 0;
         _hasOutValue = _hasOutGain = false;
     }
 
@@ -77,9 +77,9 @@ public:
         switch (_phase) {
         case RoundPhase::IDLE:
             if (nowMs >= _nextRoundAt) {
-                _round++;
+                _roundNo++;
                 if (_slot == MGM_NONE) _slot = bestSlot();   // cold-start
-                _outValue = ValueMsg{_round, _myId, _slot, nowMs + _cfg.leaseLenMs};
+                _outValue = ValueMsg{_roundNo, _myId, _slot, nowMs + _cfg.leaseLenMs};
                 _hasOutValue = true;
                 _nextRoundAt = nowMs + _cfg.roundPeriodMs;
                 _phase = RoundPhase::COLLECT_VALUE;
@@ -92,7 +92,7 @@ public:
                 uint8_t cur = conflictAt(_slot);
                 _proposedSlot = bestSlot();
                 _myGain = (int16_t)((int)cur - (int)conflictAt(_proposedSlot));
-                _outGain = GainMsg{_round, _myId, _myGain, _proposedSlot};
+                _outGain = GainMsg{_roundNo, _myId, _myGain, _proposedSlot};
                 _hasOutGain = true;
                 _phase = RoundPhase::COLLECT_GAIN;
                 _phaseStart = nowMs;
@@ -154,7 +154,7 @@ private:
     // 이번 라운드 GAIN 을 보낸 이웃들보다 내 이득이 큰가(동률은 id 큰 쪽 승).
     bool winsContest() const {
         for (uint8_t i = 0; i < _n; i++) {
-            if (_nb[i].gainRound != _round) continue;
+            if (_nb[i].gainRound != _roundNo) continue;
             if (_nb[i].gain > _myGain) return false;
             if (_nb[i].gain == _myGain && _nb[i].id > _myId) return false;
         }
@@ -166,7 +166,7 @@ private:
     uint8_t  _slot;
     MgmState _state;
     RoundPhase _phase;
-    uint16_t _round;
+    uint16_t _roundNo;
     uint32_t _nextRoundAt;
     uint32_t _phaseStart;
 
