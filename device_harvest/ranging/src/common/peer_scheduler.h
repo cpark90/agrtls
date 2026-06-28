@@ -55,6 +55,13 @@ public:
 
     uint8_t tagCount() const { return _n; }
 
+    // Copy current tag short addresses out (for publishing TAGLIST over the mesh).
+    uint8_t tagIds(uint16_t* out, uint8_t maxN) const {
+        uint8_t c = 0;
+        for (uint8_t i = 0; i < _n && c < maxN; i++) out[c++] = _t[i].addr;
+        return c;
+    }
+
     // Pick the max-score tag (does not mutate). Report the poll result via reportResult.
     bool pick(uint32_t nowMs, uint16_t& outAddr) const {
         if (_n == 0) return false;

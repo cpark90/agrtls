@@ -17,6 +17,8 @@
  */
 #include <Arduino.h>
 #include <SPI.h>
+#include <WiFi.h>        // top-level so PlatformIO LDF resolves the framework WiFi/ESP-NOW libs
+#include <esp_now.h>
 #include <DW1000Ranging.h>
 #include "rf_config_dw1000.h"
 #include "logging.h"
@@ -24,10 +26,15 @@
 #include "peer_scheduler.h"
 #include "interference.h"
 #include "mgm_agent.h"
+#include "mesh_link.h"   // pulls in mesh_msg.h
 
-// This node's address (anchor #0: byte0=0x00 -> short 0x0000 -> "A0"). Change per node.
-#define SELF_ADDR "00:00:5B:D5:A9:9A:E2:9C"
-static const uint16_t SELF_SHORT = 0x0000;
+// Anchor number (different per board). byte0 = ANCHOR_ID -> short 0x00NN -> "A{ANCHOR_ID}".
+// For multi-anchor tests, override per board at build time:
+//   PLATFORMIO_BUILD_FLAGS="-DANCHOR_ID=1" pio run -e anchor_dw1000_accuracy_meshagent -t upload --upload-port /dev/ttyUSBx
+#ifndef ANCHOR_ID
+#define ANCHOR_ID 0
+#endif
+static const uint16_t SELF_SHORT = (ANCHOR_ID);
 
 // Initial parameters (DESIGN_P3_scope1.md section M)
 static const SuperframeConfig    SF_CFG  = {16, 45, 5};
@@ -40,21 +47,26 @@ static const float    AUDIBLE_THRESH  = -90.0f;
 // not cut an in-flight exchange short.
 static const uint32_t POLL_TIMEOUT_MS = 100;
 static const uint16_t EXCHANGE_BUDGET = 8;
+static const uint32_t PUBLISH_PERIOD_MS = 700;   // ~1 superframe: publish TAGLIST/AUDIBLE
 
 Superframe        sf;
 PeerScheduler     sched;
 InterferenceGraph ig;
 MgmAgent          agent;
+MeshLink          mesh;
 
 // In-flight poll tracking (single-poll guard)
 static uint16_t pollTarget  = PS_NONE;
 static uint32_t pollStartMs = 0;
+static uint32_t lastPublishMs = 0;
 
-// ---- mesh abstraction (replaced by ESP-WIFI-MESH in F-b) ----
-// TODO(F-b): esp_mesh init + send/recv. On receive, wire callbacks to ig.onTagList/onAudibleReport
-//            and agent.onValue/onGain.
-static void meshSendValue(const ValueMsg&) { /* TODO(F-b) */ }
-static void meshSendGain(const GainMsg&)   { /* TODO(F-b) */ }
+// ---- L3 outbound (ESP-NOW broadcast) ----
+static void meshSendValue(const ValueMsg& v) {
+    uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packValue(v, b));
+}
+static void meshSendGain(const GainMsg& g) {
+    uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packGain(g, b));
+}
 
 // ---- UWB callbacks ----
 void newRange() {
@@ -75,7 +87,9 @@ void overheard(uint16_t shortAddr, float rxp) { ig.onOverheard(shortAddr, rxp, m
 
 void setup() {
     Serial.begin(115200); delay(200);
-    Serial.println("# anchor_dw1000_accuracy_meshagent (initiator/polling master)");
+    char selfAddr[24];
+    snprintf(selfAddr, sizeof(selfAddr), "%02X:00:5B:D5:A9:9A:E2:9C", (ANCHOR_ID));
+    Serial.print("# anchor_dw1000_accuracy_meshagent (initiator) A"); Serial.println(ANCHOR_ID);
 
     sf.begin(SF_CFG);
     sched.begin(PS_CFG);
@@ -88,26 +102,76 @@ void setup() {
     DW1000Ranging.attachNewDevice(newDevice);
     DW1000Ranging.attachInactiveDevice(inactiveDevice);
     DW1000Ranging.attachOverheard(overheard);
-    DW1000Ranging.setScheduledMode(true);                       // disable auto-broadcast POLL
-    DW1000Ranging.startAsInitiator(SELF_ADDR, RF_MODE, false);  // anchor drives the polling
+    DW1000Ranging.setScheduledMode(true);                        // disable auto-broadcast POLL
+    DW1000Ranging.startAsInitiator(selfAddr, RF_MODE, false);    // anchor drives the polling
     applyRfConfigDW1000();
 
-    // F-a: no mesh sync -> set a local epoch immediately (single-node validation).
-    // TODO(F-b): replace setEpoch with gossip slot-phase consensus.
+    // Control plane: ESP-NOW broadcast for L2/L3 coordination messages.
+    if (!mesh.begin()) Serial.println("# mesh init failed");
+
+    // F-b: slot epoch still local (gossip slot-phase sync is the next sub-step).
+    // MGM coordination + interference detection work over the mesh without tight epoch sync.
     sf.setEpoch(millis());
+}
+
+// Drain received mesh frames and dispatch to L2/L3 (called from loop, single-threaded).
+static void meshPump(uint32_t now) {
+    MeshLink::Frame fr;
+    for (int i = 0; i < 8 && mesh.poll(fr); i++) {
+        switch (meshMsgType(fr.data, fr.len)) {
+        case MESH_VALUE: {
+            ValueMsg m;
+            if (unpackValue(fr.data, fr.len, m) && m.agentId != SELF_SHORT) agent.onValue(m, now);
+            break;
+        }
+        case MESH_GAIN: {
+            GainMsg m;
+            if (unpackGain(fr.data, fr.len, m) && m.agentId != SELF_SHORT) agent.onGain(m, now);
+            break;
+        }
+        case MESH_TAGLIST: {
+            uint16_t fromId; uint16_t ids[MESH_MAX_IDS]; uint8_t k;
+            if (unpackIdList(fr.data, fr.len, fromId, ids, MESH_MAX_IDS, k))
+                ig.onTagList(fromId, ids, k, now);
+            break;
+        }
+        case MESH_AUDIBLE: {
+            uint16_t fromId; uint16_t ids[MESH_MAX_IDS]; uint8_t k;
+            if (unpackIdList(fr.data, fr.len, fromId, ids, MESH_MAX_IDS, k))
+                ig.onAudibleReport(fromId, ids, k, now);
+            break;
+        }
+        }
+    }
+}
+
+// Periodically publish my tag set and what I overhear (drives L2 interference detection).
+static void meshPublish(uint32_t now) {
+    if ((uint32_t)(now - lastPublishMs) < PUBLISH_PERIOD_MS) return;
+    lastPublishMs = now;
+    uint8_t  b[MESH_MAX_FRAME];
+    uint16_t myTags[PS_MAX_TAGS];
+    uint8_t  nt = sched.tagIds(myTags, PS_MAX_TAGS);
+    ig.setMyTags(myTags, nt);
+    mesh.send(b, packIdList(MESH_TAGLIST, SELF_SHORT, myTags, nt, b));
+    uint16_t aud[IG_MAX_NEIGHBORS];
+    uint8_t  na = ig.myAudibleList(aud, IG_MAX_NEIGHBORS, now);
+    mesh.send(b, packIdList(MESH_AUDIBLE, SELF_SHORT, aud, na, b));
 }
 
 void loop() {
     DW1000Ranging.loop();                 // UWB state machine + overhearing
     uint32_t now = millis();
 
-    // --- L2/L3 (F-a: mesh stubbed -> neighbors 0 -> agent converges to slot 0) ---
+    // --- L2/L3 over the mesh ---
+    meshPump(now);                        // ingest neighbor VALUE/GAIN/TAGLIST/AUDIBLE
     ig.tick(now);
     agent.setNeighbors(ig.neighborIds(), ig.neighborCount());
     agent.tick(now);
     ValueMsg v; GainMsg g;
     if (agent.pendingValue(v)) meshSendValue(v);
     if (agent.pendingGain(g))  meshSendGain(g);
+    meshPublish(now);                     // periodic TAGLIST + AUDIBLE
 
     // --- L4: single-poll a tag by priority inside my slot's work-window ---
     uint8_t mySlot = agent.slot();

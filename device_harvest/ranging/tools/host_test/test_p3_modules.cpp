@@ -8,6 +8,7 @@
 #include "peer_scheduler.h"
 #include "interference.h"
 #include "mgm_agent.h"
+#include "mesh_msg.h"
 
 static int g_fail = 0;
 #define CHECK(cond) do { if(!(cond)){ printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); g_fail++; } } while(0)
@@ -123,11 +124,42 @@ static void test_mgm_clique() {
     printf("  MGM slots: %u %u %u\n", ag[0].slot(), ag[1].slot(), ag[2].slot());
 }
 
+static void test_mesh_msg() {
+    uint8_t buf[MESH_MAX_FRAME];
+
+    // VALUE round-trip
+    ValueMsg v{7, 0x0042, 3, 123456}, v2{};
+    uint8_t n = packValue(v, buf);
+    CHECK(n == 10 && meshMsgType(buf, n) == MESH_VALUE);
+    CHECK(unpackValue(buf, n, v2));
+    CHECK(v2.round == 7 && v2.agentId == 0x0042 && v2.slot == 3 && v2.leaseExpiry == 123456u);
+
+    // GAIN round-trip (incl. negative gain)
+    GainMsg g{9, 0x00AB, (int16_t)-5, 2}, g2{};
+    n = packGain(g, buf);
+    CHECK(n == 8 && meshMsgType(buf, n) == MESH_GAIN);
+    CHECK(unpackGain(buf, n, g2));
+    CHECK(g2.round == 9 && g2.agentId == 0x00AB && g2.gain == -5 && g2.propSlot == 2);
+
+    // id-list round-trip (TAGLIST)
+    uint16_t ids[] = {0x80, 0x81, 0x82};
+    n = packIdList(MESH_TAGLIST, 0x0001, ids, 3, buf);
+    CHECK(meshMsgType(buf, n) == MESH_TAGLIST);
+    uint16_t agentId = 0; uint16_t out[8]; uint8_t cnt = 0;
+    CHECK(unpackIdList(buf, n, agentId, out, 8, cnt));
+    CHECK(agentId == 0x0001 && cnt == 3 && out[0] == 0x80 && out[1] == 0x81 && out[2] == 0x82);
+
+    // wrong type / truncated
+    CHECK(!unpackValue(buf, n, v2));          // buf holds a TAGLIST, not VALUE
+    CHECK(!unpackIdList(buf, 2, agentId, out, 8, cnt));  // too short
+}
+
 int main() {
     test_superframe();
     test_peer_scheduler();
     test_interference();
     test_mgm_clique();
+    test_mesh_msg();
     if (g_fail == 0) printf("ALL TESTS PASSED\n");
     else             printf("%d CHECK(S) FAILED\n", g_fail);
     return g_fail ? 1 : 0;
