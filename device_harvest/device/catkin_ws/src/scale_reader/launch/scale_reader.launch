@@ -1,0 +1,4 @@
+<launch>
+  <rosparam command="load" file="$(find scale_reader)/config/params.yaml" />
+  <node name="scale_reader_node" pkg="scale_reader" type="scale_reader_node" output="screen" />
+</launch>

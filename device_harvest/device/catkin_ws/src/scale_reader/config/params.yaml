@@ -1,0 +1,7 @@
+scale_reader_node:
+  port: "/dev/serial/by-id/CHANGE_ME_SCALE"  # stable by-id path, not /dev/ttyUSB0
+  baud: 9600
+  frame_id: "scale"
+  topic: "/scale/weight"
+  unit: "kg"                                  # physical unit the scale outputs
+  read_timeout: 1.0                           # seconds; keeps loop responsive to shutdown

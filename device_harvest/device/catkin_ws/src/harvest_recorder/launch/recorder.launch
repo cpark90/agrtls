@@ -1,0 +1,5 @@
+<launch>
+  <!-- Recorder only — assumes uwb_node and scale_reader_node are already running. -->
+  <rosparam command="load" file="$(find harvest_recorder)/config/params.yaml" />
+  <node name="recorder" pkg="harvest_recorder" type="recorder_node" output="screen" />
+</launch>

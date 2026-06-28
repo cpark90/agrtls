@@ -1,0 +1,4 @@
+<launch>
+  <rosparam command="load" file="$(find uwb_positioning)/config/params.yaml" />
+  <node name="uwb_node" pkg="uwb_positioning" type="uwb_node" output="screen" />
+</launch>

@@ -1,0 +1,26 @@
+services:
+  serial_sync:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: serial_sync:dev
+    # Host networking keeps ROS_MASTER_URI trivial on a single machine.
+    network_mode: host
+    # Live-edit the workspace from the host; CSV output persists in ./data.
+    volumes:
+      - ../catkin_ws:/catkin_ws
+      - ../data:/data
+    # --- Serial device passthrough -------------------------------------------
+    # Replace with the real stable paths from `ls -l /dev/serial/by-id/`.
+    # devices:
+    #   - "/dev/serial/by-id/usb-FTDI_DEVICE_A-if00-port0:/dev/ttyUSB0"
+    #   - "/dev/serial/by-id/usb-FTDI_DEVICE_B-if00-port0:/dev/ttyUSB1"
+    # group_add lets the container user open the ports (dialout owns ttyUSB*).
+    group_add:
+      - dialout
+    # -------------------------------------------------------------------------
+    stdin_open: true
+    tty: true
+    # Default: drop into a shell. Swap for the launch line once parsing works.
+    command: bash
+    # command: roslaunch serial_sync bringup.launch

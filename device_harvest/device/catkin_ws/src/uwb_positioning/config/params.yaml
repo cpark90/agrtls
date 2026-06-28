@@ -1,0 +1,15 @@
+uwb_node:
+  port: "/dev/serial/by-id/CHANGE_ME_UWB"   # stable by-id path, not /dev/ttyUSB0
+  baud: 115200
+  frame_id: "uwb"
+  topic: "/uwb/position"
+  read_timeout: 1.0                          # seconds; keeps loop responsive to shutdown
+
+  # Known anchor positions in the world frame (metres).
+  # Add/remove entries to match your deployment.
+  # Order must match the distance values in each UWB32 serial frame.
+  anchors:
+    - [0.0, 0.0, 0.0]   # anchor 0
+    - [3.0, 0.0, 0.0]   # anchor 1
+    - [0.0, 3.0, 0.0]   # anchor 2
+    - [3.0, 3.0, 0.0]   # anchor 3
