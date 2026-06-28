@@ -60,6 +60,11 @@ static uint16_t pollTarget  = PS_NONE;
 static uint32_t pollStartMs = 0;
 static uint32_t lastPublishMs = 0;
 
+// Periodic status telemetry (slot/neighbor/tag/range health)
+static const uint32_t STATUS_PERIOD_MS = 2000;
+static uint32_t g_ranges   = 0;
+static uint32_t lastStatMs = 0;
+
 // ---- L3 outbound (ESP-NOW broadcast) ----
 static void meshSendValue(const ValueMsg& v) {
     uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packValue(v, b));
@@ -79,6 +84,7 @@ void newRange() {
     shortAddrToId(sa, devId, sizeof(devId));
     logRange(devId, r, p);                         // CSV: deviceId,range,rxp,ts,nlos
     sched.reportResult(sa, millis(), true, r, p);  // update L4 priority
+    g_ranges++;
     if (sa == pollTarget) pollTarget = PS_NONE;    // in-flight done
 }
 void newDevice(DW1000Device* d)      { sched.addTag(d->getShortAddress()); }
@@ -199,5 +205,16 @@ void loop() {
                 pollStartMs = now;
             }
         }
+    }
+
+    // status telemetry: nbr>0 means the mesh detected the other anchor; two anchors should
+    // converge to different slot values.
+    if ((uint32_t)(now - lastStatMs) >= STATUS_PERIOD_MS) {
+        lastStatMs = now;
+        Serial.print("# A");      Serial.print(ANCHOR_ID);
+        Serial.print(" slot=");   Serial.print(agent.slot());
+        Serial.print(" nbr=");    Serial.print(ig.neighborCount());
+        Serial.print(" tags=");   Serial.print(sched.tagCount());
+        Serial.print(" ranges="); Serial.println(g_ranges);
     }
 }
