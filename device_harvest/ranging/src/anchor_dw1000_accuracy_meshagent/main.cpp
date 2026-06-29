@@ -36,9 +36,10 @@
 #endif
 static const uint16_t SELF_SHORT = (ANCHOR_ID);
 
-// Initial parameters (DESIGN_P3_scope1.md section M)
-static const SuperframeConfig    SF_CFG  = {16, 45, 5};
-static const MgmConfig           MGM_CFG = {16, 500, 200, 3600};
+// Slot parameters. K_s is small for low anchor counts: per-anchor airtime ~= 1/K_s, and each
+// slot's work-window holds several TWR exchanges. Raise K_s if many anchors mutually interfere.
+static const SuperframeConfig    SF_CFG  = {4, 120, 10};
+static const MgmConfig           MGM_CFG = {4, 500, 200, 3600};
 static const PeerSchedulerConfig PS_CFG  = {0.001f, 8.0f, NLOS_RXPOWER_THRESHOLD_DBM, 5, 0.2f};
 static const uint32_t LEASE_MS        = 3600;
 static const float    AUDIBLE_THRESH  = -90.0f;
@@ -63,6 +64,7 @@ static uint32_t lastPublishMs = 0;
 // Periodic status telemetry (slot/neighbor/tag/range health)
 static const uint32_t STATUS_PERIOD_MS = 2000;
 static uint32_t g_ranges   = 0;
+static uint32_t g_meshRx   = 0;   // mesh frames received (ESP-NOW reception sanity)
 static uint32_t lastStatMs = 0;
 
 // ---- L3 outbound (ESP-NOW broadcast) ----
@@ -89,7 +91,11 @@ void newRange() {
 }
 void newDevice(DW1000Device* d)      { sched.addTag(d->getShortAddress()); }
 void inactiveDevice(DW1000Device* d) { sched.removeTag(d->getShortAddress()); }
-void overheard(uint16_t shortAddr, float rxp) { ig.onOverheard(shortAddr, rxp, millis()); }
+void overheard(uint16_t shortAddr, float rxp) {
+    // Only other anchors (initiators, short addr in 0x0000..0x003F) are interferers;
+    // ignore overheard tags and any bogus/misparsed addresses.
+    if (shortAddr < 0x40) ig.onOverheard(shortAddr, rxp, millis());
+}
 
 void setup() {
     Serial.begin(115200); delay(200);
@@ -124,6 +130,7 @@ void setup() {
 static void meshPump(uint32_t now) {
     MeshLink::Frame fr;
     for (int i = 0; i < 8 && mesh.poll(fr); i++) {
+        g_meshRx++;
         switch (meshMsgType(fr.data, fr.len)) {
         case MESH_VALUE: {
             ValueMsg m;
@@ -147,6 +154,14 @@ static void meshPump(uint32_t now) {
                 ig.onAudibleReport(fromId, ids, k, now);
             break;
         }
+        case MESH_SYNC: {
+            uint16_t fromId; uint32_t phase;
+            // Adopt the superframe phase of any lower-id anchor -> all converge to the lowest
+            // id's phase, so owned slots fall at distinct absolute times (collision-free airtime).
+            if (unpackSync(fr.data, fr.len, fromId, phase) && fromId < SELF_SHORT)
+                sf.setEpoch(now - phase);
+            break;
+        }
         }
     }
 }
@@ -163,6 +178,8 @@ static void meshPublish(uint32_t now) {
     uint16_t aud[IG_MAX_NEIGHBORS];
     uint8_t  na = ig.myAudibleList(aud, IG_MAX_NEIGHBORS, now);
     mesh.send(b, packIdList(MESH_AUDIBLE, SELF_SHORT, aud, na, b));
+    // slot-phase gossip: lower-id anchors are the reference; higher-id anchors align to them.
+    mesh.send(b, packSync(SELF_SHORT, sf.phaseMs(now), b));
 }
 
 void loop() {
@@ -214,7 +231,14 @@ void loop() {
         Serial.print("# A");      Serial.print(ANCHOR_ID);
         Serial.print(" slot=");   Serial.print(agent.slot());
         Serial.print(" nbr=");    Serial.print(ig.neighborCount());
+        Serial.print("[");
+        for (uint8_t i = 0; i < ig.neighborCount(); i++) {
+            if (i) Serial.print(",");
+            Serial.print(ig.neighborIds()[i], HEX);
+        }
+        Serial.print("]");
         Serial.print(" tags=");   Serial.print(sched.tagCount());
+        Serial.print(" rx=");     Serial.print(g_meshRx);
         Serial.print(" ranges="); Serial.println(g_ranges);
     }
 }

@@ -25,6 +25,7 @@ enum : uint8_t {
     MESH_GAIN    = 2,
     MESH_TAGLIST = 3,
     MESH_AUDIBLE = 4,
+    MESH_SYNC    = 5,   // slot-phase gossip: agentId(2) phaseMs(4)
 };
 
 #ifndef MESH_MAX_IDS
@@ -96,6 +97,22 @@ inline uint8_t packIdList(uint8_t type, uint16_t agentId, const uint16_t* ids, u
     for (uint8_t i = 0; i < n; i++) mesh_detail::putU16(p, ids[i]);
     return (uint8_t)(p - buf);
 }
+// --- SYNC (slot-phase gossip) ---
+inline uint8_t packSync(uint16_t agentId, uint32_t phaseMs, uint8_t* buf) {
+    uint8_t* p = buf;
+    *p++ = MESH_SYNC;
+    mesh_detail::putU16(p, agentId);
+    mesh_detail::putU32(p, phaseMs);
+    return (uint8_t)(p - buf);
+}
+inline bool unpackSync(const uint8_t* buf, uint8_t len, uint16_t& agentId, uint32_t& phaseMs) {
+    if (len < 7 || buf[0] != MESH_SYNC) return false;
+    const uint8_t* p = buf + 1;
+    agentId = mesh_detail::getU16(p);
+    phaseMs = mesh_detail::getU32(p);
+    return true;
+}
+
 inline bool unpackIdList(const uint8_t* buf, uint8_t len,
                          uint16_t& agentId, uint16_t* ids, uint8_t maxN, uint8_t& n) {
     if (len < 4) return false;

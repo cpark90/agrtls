@@ -149,8 +149,15 @@ static void test_mesh_msg() {
     CHECK(unpackIdList(buf, n, agentId, out, 8, cnt));
     CHECK(agentId == 0x0001 && cnt == 3 && out[0] == 0x80 && out[1] == 0x81 && out[2] == 0x82);
 
+    // SYNC round-trip
+    n = packSync(0x0000, 314159, buf);
+    CHECK(n == 7 && meshMsgType(buf, n) == MESH_SYNC);
+    uint16_t sid = 0xFFFF; uint32_t phase = 0;
+    CHECK(unpackSync(buf, n, sid, phase));
+    CHECK(sid == 0x0000 && phase == 314159u);
+
     // wrong type / truncated
-    CHECK(!unpackValue(buf, n, v2));          // buf holds a TAGLIST, not VALUE
+    CHECK(!unpackValue(buf, n, v2));          // buf holds a SYNC, not VALUE
     CHECK(!unpackIdList(buf, 2, agentId, out, 8, cnt));  // too short
 }
 

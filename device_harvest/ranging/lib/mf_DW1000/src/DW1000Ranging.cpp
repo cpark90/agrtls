@@ -491,7 +491,10 @@ void DW1000RangingClass::loop() {
 			
 			noteActivity();
 		}
-		else {
+		// Only short-MAC ranging frames reach here. A BLINK/RANGING_INIT not consumed by the
+		// branches above (e.g. an initiator overhearing another initiator's BLINK) must be ignored,
+		// not misparsed by decodeShortMACFrame (which would yield a bogus source address).
+		else if(messageType != BLINK && messageType != RANGING_INIT) {
 			//we have a short mac layer frame !
 			byte address[2];
 			_globalMac.decodeShortMACFrame(data, address);
