@@ -8,6 +8,7 @@
 #include "tag_registry.h"
 #include "window_color.h"
 #include "window_frame.h"
+#include "mesh_msg.h"
 
 static int g_fail = 0;
 #define CHECK(c) do { if(!(c)){ printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); g_fail++; } } while(0)
@@ -105,12 +106,39 @@ static void test_frame() {
     CHECK(f.windowIndexNow(1600) == 0);    // wrap (1000 + 600)
 }
 
+// W-2: TAGINFO message (registry share over the mesh)
+static void test_taginfo() {
+    TagInfoEntry in[3] = {{0, -70.5f, 1.23f}, {1, -82.0f, 4.56f}, {2, -90.25f, 0.0f}};
+    uint8_t buf[MESH_MAX_FRAME];
+    uint8_t len = packTagInfo(7, in, 3, buf);
+    CHECK(meshMsgType(buf, len) == MESH_TAGINFO);
+
+    uint16_t aid; TagInfoEntry out[8]; uint8_t n;
+    CHECK(unpackTagInfo(buf, len, aid, out, 8, n));
+    CHECK(aid == 7 && n == 3);
+    CHECK(out[0].tagId == 0 && approx(out[0].rxp_dBm, -70.5f) && approx(out[0].range_m, 1.23f));
+    CHECK(out[1].tagId == 1 && approx(out[1].rxp_dBm, -82.0f) && approx(out[1].range_m, 4.56f));
+    CHECK(out[2].tagId == 2 && approx(out[2].rxp_dBm, -90.25f));
+
+    // apply a received TAGINFO into a registry (what an anchor does on receive)
+    TagRegistry r; r.begin();
+    for (uint8_t i = 0; i < n; i++) r.report(aid, out[i].tagId, out[i].rxp_dBm, out[i].range_m);
+    CHECK(r.effectiveAnchorCount(0) == 1);   // -70.5 eligible
+    CHECK(r.effectiveAnchorCount(1) == 1);   // -82 eligible
+    CHECK(r.effectiveAnchorCount(2) == 0);   // -90.25 < theta_link(-85) -> not eligible
+
+    CHECK(!unpackTagInfo(buf, 3, aid, out, 8, n));   // truncated
+    uint8_t v[MESH_MAX_FRAME]; ValueMsg vm{1,2,3,4}; packValue(vm, v);
+    CHECK(!unpackTagInfo(v, 10, aid, out, 8, n));     // wrong type
+}
+
 int main() {
     test_quality();
     test_registry();
     test_color();
     test_color_cap();
     test_frame();
+    test_taginfo();
     if (g_fail == 0) printf("ALL WINDOW TESTS PASSED\n");
     else             printf("%d CHECK(S) FAILED\n", g_fail);
     return g_fail ? 1 : 0;
