@@ -3,8 +3,8 @@
 realtime_plot.py - UWB 거리/RX Power 실시간 시각화
 
 펌웨어가 내보내는 CSV 한 줄 포맷을 받아 실시간 선그래프로 표시한다.
-  포맷: deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag
-  (logging.h / tag_*_wifi 의 sendUdp 포맷과 동일. nlosFlag는 UDP엔 없을 수 있어 선택 처리)
+  포맷: deviceId,range_m,rxPower_dBm,timestamp_ms
+  (logging.h / tag_*_wifi 의 sendUdp 포맷과 동일. 과거 nlosFlag 필드는 선택적으로 무시)
 
 입력 소스 두 가지 지원:
   - serial : 보드를 USB로 연결한 경우 (pyserial)

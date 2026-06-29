@@ -5,7 +5,10 @@
  * The downstream parser (external EKF/IMU fusion) depends on this format, so do not change the
  * field order. Always append new fields at the end. (CLAUDE.md rule)
  *
- * Format (CSV): deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag
+ * Format (CSV): deviceId,range_m,rxPower_dBm,timestamp_ms
+ * NLOS is not pre-flagged here: rxPower_dBm is emitted raw and the external system interprets it
+ * (firmware carries no fusion/interpretation logic). NLOS_RXPOWER_THRESHOLD_DBM below is used by the
+ * on-anchor scheduler (peer_scheduler), not by this CSV.
  *
  * deviceId is derived from the distant device's short address.
  *   see shortAddrToId(): anchor -> "A{n}", tag -> "T{n}"
@@ -36,16 +39,13 @@ inline void shortAddrToId(uint16_t addr, char* buf, size_t len) {
 }
 
 inline void logRange(const char* deviceId, float range_m, float rxPower_dBm) {
-    bool nlosSuspect = (rxPower_dBm < NLOS_RXPOWER_THRESHOLD_DBM);
     Serial.print(deviceId);
     Serial.print(',');
     Serial.print(range_m, 3);
     Serial.print(',');
     Serial.print(rxPower_dBm, 2);
     Serial.print(',');
-    Serial.print(millis());
-    Serial.print(',');
-    Serial.println(nlosSuspect ? 1 : 0);
+    Serial.println(millis());
 }
 
 #endif // LOGGING_H

@@ -84,10 +84,10 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - 채널 1/2/3/5 대역폭 동일 → 채널보다 앵커 높이/배치/필터 우선.
 
 ### 멀티 디바이스
-- mf-DW1000 데모는 time-multiplexing 미지원. 다중 태그 확장 시 직접 스케줄링 필요.
+- mf-DW1000 데모는 time-multiplexing 미지원. 다중 태그 확장 시 직접 스케줄링. 스케줄링은 MGM, TDMA로 구현.
 
 ## 출력 포맷 (외부 EKF 연동)
-- logging.h의 CSV: `deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag`
+- logging.h의 CSV: `deviceId,range_m,rxPower_dBm,timestamp_ms`
 - 필드 순서 변경 금지, 새 필드는 뒤에 append.
 - 펌웨어에 EKF/IMU 융합 로직을 넣지 않음 (외부 시스템 범위).
 
@@ -113,4 +113,5 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - 정확도 이슈는 안테나 딜레이/캘리브레이션을 가장 먼저 의심.
 - 코드 수정은 변경 전/후 diff로 제시.
 - arduino-cli 명령 사용 금지. PlatformIO 기준.
-- .md 파일 작성에만 한글을 사용하고 주석을 포함한 이외에는 영어로 작성.
+- harness관련 .md 파일 작성에만 한글을 사용하고 문서들과 주석을 포함한 이외에는 영어로 작성.
+- 한글 작성에서도 용어들은 영어로 작성.

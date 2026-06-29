@@ -1,6 +1,6 @@
 # tools/ — 로그 분석 / 시각화
 
-펌웨어가 내보내는 CSV(`deviceId,range_m,rxPower_dBm,timestamp_ms,nlosFlag`)를
+펌웨어가 내보내는 CSV(`deviceId,range_m,rxPower_dBm,timestamp_ms`)를
 실시간으로 받아 시각화한다. 시리얼(USB)과 UDP(WiFi) 두 입력을 모두 지원.
 
 ## 설치
