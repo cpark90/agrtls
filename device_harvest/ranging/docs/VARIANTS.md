@@ -18,23 +18,24 @@
 
 | 변종 (env) | role | chip | rfmode | features | 용도 |
 |---|---|---|---|---|---|
+| `tag_dw1000_accuracy` | tag | DW1000 | accuracy | — | **표준(native)** 태그 = initiator(브로드캐스트 POLL). 주소 `-D TAG_ID=n` |
+| `anchor_dw1000_accuracy` | anchor | DW1000 | accuracy | — | **표준(native)** 앵커 = responder(폴에 응답). 주소 `-D ANCHOR_ID=n` |
 | `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | CORE mesh-TDMA 앵커 = **initiator**(태그를 스케줄 폴). HW 검증됨 |
-| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만). 주소는 `-D TAG_ID=n` |
+| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만). 주소 `-D TAG_ID=n` |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 앵커 (스켈레톤) |
 | `tag_dw3000_fast_filtered` | tag | DW3000 | fast | filtered | 고속+필터 태그 (스켈레톤) |
 
-> 구 브로드캐스트 DW1000 변종(`anchor_dw1000_accuracy`, `tag_dw1000_accuracy`,
-> `..._lowpower_oled`, `..._accuracy_wifi`)은 mesh-TDMA 역할반전 변종으로 대체되어 제거됨.
+## 역할 주의 — 표준 vs mesh-TDMA는 역할이 반대
 
-## CORE mesh-TDMA 역할 반전 (주의)
+| 계열 | 물리 태그 | 물리 앵커 |
+|---|---|---|
+| **표준**(`tag/anchor_dw1000_accuracy`) | initiator (`startAsTag`, 브로드캐스트 POLL) | responder (`startAsAnchor`) |
+| **mesh-TDMA**(`*_meshagent`/`*_responder`) | responder (`startAsResponder`) | initiator (`startAsInitiator`, 스케줄 폴) |
 
-`*_meshagent` / `*_responder` 변종은 **물리 명칭과 mf-DW1000 역할이 뒤바뀐다**:
-- 물리 **앵커**(`anchor_..._meshagent`) = **initiator** — `startAsInitiator()` 로 시작, 태그를 폴.
-- 물리 **태그**(`tag_..._responder`) = **responder** — `startAsResponder()` 로 시작, 폴에 응답만.
+- **표준**: 기존 라이브러리를 그대로 사용하는 native 브로드캐스트 TWR. 태그당 앵커 ≤4(브로드캐스트 RANGE 프레임 한계). mesh/스케줄 없음.
+- **mesh-TDMA**: 역할 반전 + 스케줄 폴링(`setScheduledMode(true)` + `pollDevice()`).
 
-`startAsInitiator()/startAsResponder()` 는 `startAsTag()/startAsAnchor()` 의 가독성 별칭(동작 동일).
-근거·설계는 `docs/ARCHITECTURE_mesh_tdma.md`, `docs/DESIGN_FLOW_mesh_tdma.md`(Pivot 4~5) 참고.
-스케줄 폴링은 라이브러리 `setScheduledMode(true)` + `pollDevice()` 로 구동(하위호환 가드드).
+`startAsInitiator()/startAsResponder()` 는 `startAsTag()/startAsAnchor()` 의 가독성 별칭(동작 동일). 설계: 표준은 native 사용, mesh-TDMA는 `docs/ARCHITECTURE_window_tdma.md`(권위)·`ARCHITECTURE_mesh_tdma.md`(과거).
 
 ## 새 변종 추가 절차
 
@@ -49,9 +50,7 @@
 
 ## Short Address Assignment Rule
 
-DW1000에서 `startAsAnchor/Tag(addr, mode, false)` 호출 시 short address는
-EUI-64의 **첫 두 바이트**에서 파생된다 (`short_addr = byte[1]*256 + byte[0]`).
-`byte[1]`을 항상 `0x00`으로 고정하면 `short_addr = byte[0]`.
+DW1000에서 `startAsAnchor/Tag(addr, mode, false)` 호출 시 short address는 EUI-64의 **첫 두 바이트**에서 파생된다 (`short_addr = byte[1]*256 + byte[0]`). `byte[1]`을 항상 `0x00`으로 고정하면 `short_addr = byte[0]`.
 
 ```
 EUI-64 포맷: "BB:00:XX:XX:XX:XX:XX:XX"
@@ -92,8 +91,7 @@ logRange(devId, d->getRange(), d->getRXPower());
 ## 칩별 주의
 
 - **DW1000**: `DW1000Ranging` 고수준 콜백 API 사용. `rf_config_dw1000.h` + `applyRfConfigDW1000()`.
-- **DW3000**: 라이브러리 API가 다름(저수준 dwt_*). 110kbps 없음, 채널 5/9 사용.
-  `rf_config_dw3000.h` 기반. main.cpp는 현재 스켈레톤이므로 실제 라이브러리로 채워야 함.
+- **DW3000**: 라이브러리 API가 다름(저수준 dwt_*). 110kbps 없음, 채널 5/9 사용. `rf_config_dw3000.h` 기반. main.cpp는 현재 스켈레톤이므로 실제 라이브러리로 채워야 함.
 
 ## 공유되는 칩 독립 코드
 
