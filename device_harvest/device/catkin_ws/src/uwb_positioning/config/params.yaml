@@ -33,3 +33,10 @@ uwb_node:
     # 20 dB → each 20 dB of additional path loss makes noise 10x worse.
     # Set to a large value (e.g. 1000) to disable rx-based noise scaling.
     rx_decay_db: 20.0
+
+    # Multiplier to convert the raw device timestamp field to seconds.
+    # 1e-3  → device outputs milliseconds  (most DW1000/DW3000 firmware)
+    # 1e-6  → device outputs microseconds
+    # 1.0   → device outputs seconds
+    # TODO: confirm unit from firmware documentation before deploying.
+    timestamp_scale: 1.0e-3
