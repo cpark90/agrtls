@@ -1,6 +1,15 @@
 <launch>
-  <!-- UWB positioning -->
-  <include file="$(find uwb_positioning)/launch/uwb_positioning.launch" />
+  <!-- Anchor layout to use.  Pass a different file to switch deployments:
+         roslaunch harvest_recorder bringup.launch \
+           anchors:=$(rospack find uwb_positioning)/config/anchors/lab.yaml
+  -->
+  <arg name="anchors"
+       default="$(find uwb_positioning)/config/anchors/default.yaml" />
+
+  <!-- UWB positioning — forward anchor selection -->
+  <include file="$(find uwb_positioning)/launch/uwb_positioning.launch">
+    <arg name="anchors" value="$(arg anchors)" />
+  </include>
 
   <!-- Weight scale reader -->
   <include file="$(find scale_reader)/launch/scale_reader.launch" />

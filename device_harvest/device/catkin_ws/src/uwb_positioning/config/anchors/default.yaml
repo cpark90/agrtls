@@ -1,0 +1,14 @@
+# Default anchor layout — placeholder positions (unit square, 3 m side, flat floor).
+# Replace with surveyed coordinates before deployment.
+#
+# id   : must exactly match the device_id field in the serial frame
+#          "<device_id>,<range_m>,<rx_power_dbm>,<timestamp>"
+# x,y,z: world-frame position in metres (right-hand, z up)
+#
+# This file is loaded into the /uwb_node namespace by the launch file, so the
+# node reads these values as the private parameter ~anchors.
+anchors:
+  - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
+  - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
+  - {id: "A2", x: 0.0, y: 3.0, z: 0.0}
+  - {id: "A3", x: 3.0, y: 3.0, z: 0.0}

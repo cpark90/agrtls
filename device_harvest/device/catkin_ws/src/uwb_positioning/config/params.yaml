@@ -5,15 +5,6 @@ uwb_node:
   topic: "/uwb/position"
   read_timeout: 1.0                          # seconds; keeps loop responsive to shutdown
 
-  # ---- Anchor table ----
-  # id must match the device_id field in the serial frame ("<id>,<range>,<rx_power>").
-  # Positions are in the world frame (metres).  Add/remove to match your deployment.
-  anchors:
-    - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
-    - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
-    - {id: "A2", x: 0.0, y: 3.0, z: 0.0}
-    - {id: "A3", x: 3.0, y: 3.0, z: 0.0}
-
   # ---- EKF / noise parameters ----
   # Position filter selection.
   # Supported: "ekf"

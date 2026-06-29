@@ -1,4 +1,18 @@
 <launch>
+  <!-- Select an anchor layout file from config/anchors/.
+       Override on the command line:
+         roslaunch uwb_positioning uwb_positioning.launch \
+           anchors:=$(rospack find uwb_positioning)/config/anchors/lab.yaml
+  -->
+  <arg name="anchors"
+       default="$(find uwb_positioning)/config/anchors/default.yaml" />
+
+  <!-- Runtime parameters: port, baud, EKF tuning -->
   <rosparam command="load" file="$(find uwb_positioning)/config/params.yaml" />
+
+  <!-- Anchor positions: loaded into the uwb_node private namespace.
+       The node reads them as ~anchors via the roscpp private-param convention. -->
+  <rosparam command="load" file="$(arg anchors)" ns="uwb_node" />
+
   <node name="uwb_node" pkg="uwb_positioning" type="uwb_node" output="screen" />
 </launch>

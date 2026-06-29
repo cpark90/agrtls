@@ -179,6 +179,21 @@ recorder:
 | `launch/bringup.launch` | `uwb_positioning`, `scale_reader`, `recorder` 세 노드 전체 실행 |
 | `launch/recorder.launch` | recorder 노드만 실행. 나머지 두 노드가 이미 실행 중일 때 사용 |
 
+### 앵커 파일 선택
+
+`bringup.launch`는 `anchors` 인자를 받아 `uwb_positioning.launch`로 전달한다. 배포 환경을 바꿀 때 이 인자 하나만 변경하면 된다.
+
+```bash
+# 기본 앵커 파일 사용
+roslaunch harvest_recorder bringup.launch
+
+# 다른 환경의 앵커 파일 사용
+roslaunch harvest_recorder bringup.launch \
+  anchors:=$(rospack find uwb_positioning)/config/anchors/lab.yaml
+```
+
+앵커 파일 추가 방법: `catkin_ws/src/uwb_positioning/config/anchors/` 아래에 YAML 파일 추가. 코드 수정 불필요.
+
 ---
 
 ## 9. 파일 구조

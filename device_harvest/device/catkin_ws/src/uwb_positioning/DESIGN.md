@@ -22,7 +22,7 @@ A3,2.890,-74.1,1023463
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
-| `device_id` | string | 앵커 식별자. `params.yaml`의 앵커 테이블과 매핑 |
+| `device_id` | string | 앵커 식별자. 앵커 설정 파일(`config/anchors/*.yaml`)의 `id`와 매핑 |
 | `range_m` | float | 태그-앵커 간 측정 거리 (미터) |
 | `rx_power_dbm` | float | 수신 신호 세기 (dBm). EKF 노이즈 모델 및 trilateration 가중치에 사용 |
 | `timestamp` | uint/float | 장치 내부 타임스탬프 (단위 미확인). EKF predict의 dt 계산에 사용 |
@@ -52,7 +52,7 @@ header.stamp = ros::Time::now()               ← 에포크 보정 전까지 도
        │
   parseFrame()                  ← device_id, range, rx_power, timestamp 추출
        │                           t_device = timestamp × timestamp_scale (초)
-  anchor_idx 조회               ← params.yaml의 앵커 테이블에서 3D 위치 lookup
+  anchor_idx 조회               ← 앵커 설정 파일에서 로드된 AnchorMap에서 3D 위치 lookup
        │
   ┌────┴────────────────────────────────────────────────────────┐
   │ EKF 미초기화                                                  │
@@ -112,7 +112,7 @@ x_hat = (AᵀWA)⁻¹ AᵀWb
 | 4개 이상 | 3D 추정, 과결정 시스템으로 노이즈에 강인 |
 | 동일 평면 배치 | `det(AᵀWA) ≈ 0` → 실패, WARN 출력 |
 
-구현: `include/uwb_positioning/uwb_ekf.h` → `trilaterate()`
+구현: `include/uwb_positioning/trilateration.h` → `trilaterate()`
 
 ---
 
@@ -233,7 +233,34 @@ R이 크면 → Kalman gain K가 작아짐 → 해당 측정값의 영향이 줄
 
 ---
 
-## 5. 파라미터 (`config/params.yaml`)
+## 5. 모듈 구조
+
+헤더 파일별로 단일 책임을 가진다. 향후 필터 고도화(UKF, Particle Filter 등)는 `position_filter.h`의 인터페이스만 구현하면 된다.
+
+| 헤더 | 역할 |
+|------|------|
+| `serial_port.h` | POSIX termios 래퍼. 포트 열기, select() 기반 readLine, 닫기 |
+| `anchor_map.h` | `AnchorMap` 클래스. `id` 문자열로 앵커 인덱스·위치를 O(1) 조회 |
+| `frame_parser.h` | `UwbFrame` struct + `parseFrame()`. 시리얼 한 줄 → 구조체 변환 |
+| `position_filter.h` | `PositionFilter` 추상 인터페이스. `init / predict / updateRange / getPosition / positionCovariance` |
+| `trilateration.h` | `rxToWeight()` + `trilaterate()`. Eigen 기반 WLS, header-only |
+| `uwb_ekf.h` | `EkfConfig` + `UwbEkf`. `PositionFilter`의 기본 구현체 (6-state EKF) |
+
+### 필터 교체 방법
+
+1. `position_filter.h`의 `PositionFilter`를 상속해 새 클래스를 작성한다.
+2. `src/uwb_node.cpp`의 `makeFilter()` 팩토리에 `else if (type == "ukf") { ... }` 케이스를 추가한다.
+3. `config/params.yaml`의 `filter/type`을 새 타입 이름으로 변경한다.
+
+코드 수정 범위: 신규 헤더 1개 + `uwb_node.cpp`의 `makeFilter()` 내 케이스 1개 추가.
+
+---
+
+## 6. 파라미터 구성
+
+설정은 두 파일로 분리된다. 런타임 파라미터(`params.yaml`)와 배포 환경별 앵커 배치(`config/anchors/*.yaml`)를 독립적으로 관리한다.
+
+### 6.1 런타임 파라미터 (`config/params.yaml`)
 
 ```yaml
 uwb_node:
@@ -243,11 +270,8 @@ uwb_node:
   topic:        "/uwb/position"
   read_timeout: 1.0                      # 초; ROS 종료 응답성 유지
 
-  anchors:                               # device_id는 시리얼 프레임의 첫 필드와 일치해야 함
-    - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
-    - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
-    - {id: "A2", x: 0.0, y: 3.0, z: 0.0}
-    - {id: "A3", x: 3.0, y: 3.0, z: 0.0}
+  filter:
+    type: "ekf"                          # makeFilter() 팩토리에 전달되는 식별자
 
   ekf:
     sigma_a:          0.3     # 가속도 노이즈 (m/s²) — 클수록 빠른 움직임 추적
@@ -257,7 +281,37 @@ uwb_node:
     timestamp_scale:  1.0e-3  # 장치 타임스탬프 단위 변환 (기본: ms → s)
 ```
 
-### 튜닝 가이드
+### 6.2 앵커 설정 (`config/anchors/*.yaml`)
+
+앵커 배치는 배포 환경마다 다르다. 별도 YAML 파일로 분리해 launch 인자로 선택한다.
+
+```yaml
+# config/anchors/default.yaml
+# id: 시리얼 프레임의 device_id와 정확히 일치해야 함
+# x, y, z: 월드 프레임 좌표 (미터, 오른손 좌표계, z 위)
+anchors:
+  - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
+  - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
+  - {id: "A2", x: 0.0, y: 3.0, z: 0.0}
+  - {id: "A3", x: 3.0, y: 3.0, z: 0.0}
+```
+
+새 환경 추가: `config/anchors/` 아래에 파일을 추가하기만 하면 된다. 노드 코드나 `params.yaml`은 수정하지 않는다.
+
+### 6.3 launch에서 앵커 파일 선택
+
+```bash
+# 기본 (default.yaml)
+roslaunch uwb_positioning uwb_positioning.launch
+
+# 다른 환경 선택
+roslaunch uwb_positioning uwb_positioning.launch \
+  anchors:=$(rospack find uwb_positioning)/config/anchors/lab.yaml
+```
+
+launch 파일이 `anchors` 파일을 `ns="uwb_node"`로 로드하므로 노드는 기존과 동일하게 `~anchors` private param으로 읽는다.
+
+### 6.4 튜닝 가이드
 
 | 증상 | 조정 |
 |------|------|
@@ -269,7 +323,7 @@ uwb_node:
 
 ---
 
-## 6. 출력 메시지 (`msg/UwbPosition.msg`)
+## 7. 출력 메시지 (`msg/UwbPosition.msg`)
 
 ```
 std_msgs/Header header
@@ -280,37 +334,43 @@ float64 z
 
 float64[9] position_covariance   # 3×3, row-major (m²). [0],[4],[8] = σ²_x, σ²_y, σ²_z
 
-float64[] anchor_distances        # 최근 앵커별 측정 거리 (m), params.yaml 앵커 순서 기준
+float64[] anchor_distances        # 최근 앵커별 측정 거리 (m), 앵커 설정 파일 순서 기준
 ```
 
 `position_covariance`는 EKF 공분산 행렬 P의 위치 블록(3×3)이다. 대각 원소가 클수록 추정 불확실성이 높다.
 
 ---
 
-## 7. 파일 구조
+## 8. 파일 구조
 
 ```
 uwb_positioning/
   include/uwb_positioning/
-    serial_port.h    # POSIX termios 래퍼 (header-only)
-    uwb_ekf.h        # UwbEkf 클래스 + trilaterate() 함수 (header-only, Eigen)
+    serial_port.h         # POSIX termios 래퍼 (header-only)
+    anchor_map.h          # AnchorMap 클래스 (앵커 ID → 인덱스·위치 O(1) 조회)
+    frame_parser.h        # UwbFrame struct + parseFrame() (header-only)
+    position_filter.h     # PositionFilter 추상 인터페이스 (필터 교체 스왑 포인트)
+    trilateration.h       # rxToWeight() + trilaterate() (header-only, Eigen)
+    uwb_ekf.h             # EkfConfig + UwbEkf (PositionFilter 구현, 6-state EKF)
   src/
-    uwb_node.cpp     # ROS 노드 진입점; 시리얼 루프, 앵커 lookup, EKF 호출
+    uwb_node.cpp          # ROS 노드; 시리얼 루프, loadAnchors, makeFilter, publish
   msg/
     UwbPosition.msg
   config/
-    params.yaml
+    params.yaml           # 런타임 파라미터 (포트, baud, EKF 노이즈)
+    anchors/
+      default.yaml        # 기본 앵커 배치 (배포 전 실측값으로 교체)
   launch/
-    uwb_positioning.launch
-  DESIGN.md          # 이 문서
+    uwb_positioning.launch  # anchors 인자로 배포 환경별 앵커 파일 선택
+  DESIGN.md               # 이 문서
 ```
 
 ---
 
-## 8. 미결 사항
+## 9. 미결 사항
 
 | # | 항목 | 조치 |
 |---|------|------|
-| 1 | 앵커 실측 위치 입력 | trilateration 정확도 결정 |
+| 1 | 앵커 실측 위치 입력 | `config/anchors/default.yaml` 또는 신규 파일에 실측 좌표 입력. trilateration 정확도 결정 |
 | 2 | 타임스탬프 단위·에포크 확인 | `timestamp_scale` 설정; 에포크 확인 후 `header.stamp`도 장치 클락으로 전환 |
 | 3 | 2D / 3D 선택 | 앵커가 같은 높이면 z 추정 불안정 — z 고정 옵션 고려 |
