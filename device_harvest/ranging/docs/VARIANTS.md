@@ -20,8 +20,9 @@
 |---|---|---|---|---|---|
 | `tag_dw1000_accuracy` | tag | DW1000 | accuracy | — | **표준(native)** 태그 = initiator(브로드캐스트 POLL). 주소 `-D TAG_ID=n` |
 | `anchor_dw1000_accuracy` | anchor | DW1000 | accuracy | — | **표준(native)** 앵커 = responder(폴에 응답). 주소 `-D ANCHOR_ID=n` |
-| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | CORE mesh-TDMA 앵커 = **initiator**(태그를 스케줄 폴). HW 검증됨 |
-| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | CORE mesh-TDMA 태그 = **responder**(폴에 응답만). 주소 `-D TAG_ID=n` |
+| `anchor_dw1000_window` | anchor | DW1000 | accuracy | mesh, agent | **window-TDMA** 앵커(initiator): 공유 레지스트리→윈도우 컬러링→윈도우의 태그를 폴. 최신 설계. 주소 `-D ANCHOR_ID=n` |
+| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh, agent | mesh-TDMA 앵커(initiator): 각 앵커가 자기 태그를 스케줄 폴. F-a/F-b 검증용 선행 모델 |
+| `tag_dw1000_responder` | tag | DW1000 | accuracy | — | mesh/window-TDMA 공용 태그 = **responder**(폴에 응답만). 주소 `-D TAG_ID=n` |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 앵커 (스켈레톤) |
 | `tag_dw3000_fast_filtered` | tag | DW3000 | fast | filtered | 고속+필터 태그 (스켈레톤) |
 
