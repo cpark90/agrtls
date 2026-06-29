@@ -175,7 +175,7 @@ static void meshPublish(uint32_t now) {
 }
 
 void loop() {
-    DW1000Ranging.loop();                 // UWB state machine + overhearing
+    DW1000Ranging.loopMeshagent();        // UWB state machine (scheduled initiator) + overhearing
     uint32_t now = millis();
 
     // --- L2/L3 over the mesh ---

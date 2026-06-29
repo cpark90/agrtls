@@ -106,11 +106,12 @@ public:
 	
 	//ranging functions
 	static int16_t detectMessageType(byte datas[]); // TODO check return type
-	static void loop();
-	// Role-split loops for the window-TDMA variants (clean single-role copies of loop() + a
-	// destination check). loop() stays the shared loop for native/meshagent. See DW1000Ranging.cpp.
-	static void loopInitiator();   // mf-DW1000 _type==TAG  (anchor_dw1000_window)
-	static void loopResponder();   // mf-DW1000 _type==ANCHOR (tag_dw1000_responder)
+	static void loop();            // native broadcast TWR only (anchor/tag_dw1000_accuracy)
+	// Per-model single-role loops (clean copies of loop() with no _type branching + a destination
+	// check so an overheard unicast for another node is ignored). See DW1000Ranging.cpp.
+	static void loopInitiator();   // window-TDMA initiator  (_type==TAG,    anchor_dw1000_window)
+	static void loopResponder();   // window-TDMA responder  (_type==ANCHOR, tag_dw1000_responder)
+	static void loopMeshagent();   // mesh-TDMA scheduled initiator (_type==TAG, anchor_dw1000_accuracy_meshagent)
 
 	// --- scheduled single-device polling (CORE TDMA, for mesh-TDMA variants) ---
 	// When scheduledMode is on, timerTick's auto-broadcast POLL is disabled (BLINK is kept).

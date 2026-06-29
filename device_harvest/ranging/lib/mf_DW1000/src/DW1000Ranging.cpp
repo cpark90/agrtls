@@ -673,18 +673,10 @@ void DW1000RangingClass::loop() {
 					//we note activity for our device:
 					myDistantDevice->noteActivity();
 
-					if(_scheduledMode) {
-						// single-poll: if this is the POLL_ACK from the device we just polled, send it a single RANGE.
-						// (the original "last index" assumption never completes for single-poll, so branch here)
-						if(myDistantDevice->getIndex() == _currentPollDevice) {
-							_expectedMsgId = RANGE_REPORT;
-							transmitRange(myDistantDevice);
-						}
-					}
-					//in the case the message come from our last device:
-					else if(myDistantDevice->getIndex() == _networkDevicesNumber-1) {
+					// native broadcast: once the last device's POLL_ACK is in, broadcast the RANGE.
+					// (scheduled single-poll lives in loopMeshagent()/loopInitiator(), not here.)
+					if(myDistantDevice->getIndex() == _networkDevicesNumber-1) {
 						_expectedMsgId = RANGE_REPORT;
-						//and transmit the next message (range) of the ranging protocole (in broadcast)
 						transmitRange(nullptr);
 					}
 				}
@@ -929,6 +921,76 @@ void DW1000RangingClass::loopResponder() {
 						return;
 					}
 				}
+			}
+		}
+	}
+}
+
+// Meshagent loop (mf-DW1000 _type==TAG, scheduledMode): the mesh-TDMA anchor that polls one tag at a
+// time via pollDevice(). A dedicated single-role loop kept separate from the window initiator so the
+// meshagent variant is self-contained; loop() above is now native(broadcast)-only. Includes the
+// destination check (overheard unicast for another anchor is ignored).
+void DW1000RangingClass::loopMeshagent() {
+	checkForReset();
+	uint32_t time = millis();
+	if(time - timer > _timerDelay) { timer = time; timerTick(); }
+
+	if(_sentAck) {
+		_sentAck = false;
+		int messageType = detectMessageType(data);
+		if(messageType == POLL) {
+			DW1000Time timePollSent; DW1000.getTransmitTimestamp(timePollSent);
+			DW1000Device* d = searchDistantDevice(_lastSentToShortAddress);
+			if(d) d->timePollSent = timePollSent;
+		}
+		else if(messageType == RANGE) {
+			DW1000Time timeRangeSent; DW1000.getTransmitTimestamp(timeRangeSent);
+			DW1000Device* d = searchDistantDevice(_lastSentToShortAddress);
+			if(d) d->timeRangeSent = timeRangeSent;
+		}
+	}
+
+	if(_receivedAck) {
+		_receivedAck = false;
+		DW1000.getData(data, LEN_DATA);
+		int messageType = detectMessageType(data);
+
+		if(messageType == RANGING_INIT) {
+			byte address[2]; _globalMac.decodeLongMACFrame(data, address);
+			DW1000Device myAnchor(address, true);
+			if(addNetworkDevices(&myAnchor, true) && _handleNewDevice != 0) (*_handleNewDevice)(&myAnchor);
+			noteActivity();
+		}
+		else if(messageType != BLINK) {   // short-MAC ranging frame
+			byte address[2]; _globalMac.decodeShortMACFrame(data, address);
+			DW1000Device* myDistantDevice = searchDistantDevice(address);
+
+			if((_networkDevicesNumber == 0) || (myDistantDevice == nullptr)) {
+				if(_handleOverheard != 0)
+					(*_handleOverheard)((uint16_t)address[1]*256 + address[0], DW1000.getReceivePower());
+				return;
+			}
+			if(!frameForMe(data)) return;   // unicast for another anchor (overheard) -> ignore
+
+			if(messageType != _expectedMsgId) return;
+			if(messageType == POLL_ACK) {
+				DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+				myDistantDevice->noteActivity();
+				// single-poll: send a single RANGE to the device we just polled
+				if(myDistantDevice->getIndex() == _currentPollDevice) {
+					_expectedMsgId = RANGE_REPORT;
+					transmitRange(myDistantDevice);
+				}
+			}
+			else if(messageType == RANGE_REPORT) {
+				float curRange;   memcpy(&curRange,   data+1+SHORT_MAC_LEN, 4);
+				float curRXPower; memcpy(&curRXPower, data+5+SHORT_MAC_LEN, 4);
+				if(_useRangeFilter && myDistantDevice->getRange() != 0.0f)
+					curRange = filterValue(curRange, myDistantDevice->getRange(), _rangeFilterValue);
+				myDistantDevice->setRange(curRange);
+				myDistantDevice->setRXPower(curRXPower);
+				_lastDistantDevice = myDistantDevice->getIndex();
+				if(_handleNewRange != 0) (*_handleNewRange)();
 			}
 		}
 	}
