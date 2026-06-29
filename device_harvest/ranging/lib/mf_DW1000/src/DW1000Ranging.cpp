@@ -56,9 +56,6 @@ uint16_t DW1000RangingClass::_rangeFilterValue = 15;
 volatile boolean DW1000RangingClass::_sentAck     = false;
 volatile boolean DW1000RangingClass::_receivedAck = false;
 
-// protocol error state
-boolean          DW1000RangingClass::_protocolFailed = false;
-
 // timestamps to remember
 int32_t            DW1000RangingClass::timer           = 0;
 int16_t            DW1000RangingClass::counterForBlink = 0; // TODO 8 bit?
@@ -280,9 +277,10 @@ boolean DW1000RangingClass::addNetworkDevices(DW1000Device* device) {
 		// Window-TDMA needs a responder (_type==ANCHOR) to hold MANY initiators (anchors) at once so
 		// several anchors can range the same tag within one window -> the tag's ranges are clustered
 		// in time (required for localization). The original demo reset to a single device here
-		// ("1 TAG"); we instead accumulate up to MAX_DEVICES. TDMA slot scheduling keeps the
-		// per-initiator exchanges from interleaving, so the single _expectedMsgId state stays valid.
-		// The reset previously also bounded the array, so add an explicit MAX_DEVICES guard.
+		// ("1 TAG"); we instead accumulate up to MAX_DEVICES. Each device carries its own protocol
+		// state (DW1000Device::_expectedMsgId/_protocolFailed), so interleaved exchanges from
+		// different initiators stay independent. The reset previously also bounded the array, so add
+		// an explicit MAX_DEVICES guard.
 		if(_networkDevicesNumber >= MAX_DEVICES) {
 			return false;
 		}

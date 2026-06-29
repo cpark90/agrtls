@@ -25,7 +25,6 @@
 #ifndef TR_MAX_TAGS
 #define TR_MAX_TAGS 24
 #endif
-#define TR_NONE 0xFFFF
 
 class TagRegistry {
 public:

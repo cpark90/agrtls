@@ -28,7 +28,9 @@ inline float linkQuality(float rxp_dBm, float range_m) {
     return rxp_dBm;
 }
 
-// Anchor selection: is this anchor-tag link good enough for the anchor to range the tag?
+// Plain (non-hysteretic) threshold check: is this link at/above theta_link right now?
+// The live scheduler instead uses the smoothed + hysteretic path (qualityEma + linkEligibleHyst,
+// stored per link in TagRegistry); this raw predicate is for one-shot checks / host tests.
 inline bool linkEligible(float rxp_dBm, float range_m) {
     return linkQuality(rxp_dBm, range_m) >= TQ_LINK_THRESH;
 }

@@ -20,6 +20,9 @@
 #define PS_MAX_TAGS 12
 #endif
 #define PS_NONE 0xFFFF
+#ifndef PS_WEAK_RXPOWER_DBM
+#define PS_WEAK_RXPOWER_DBM (-82.0f)   // WEAK link threshold (RXP dBm); below this a tag is far/weak
+#endif                                 // -> deprioritized (PeerSchedulerConfig.weakRxpDbm)
 
 struct PeerSchedulerConfig {
     float   agingRateBase;   // score per ms
@@ -32,7 +35,7 @@ struct PeerSchedulerConfig {
 class PeerScheduler {
 public:
     PeerScheduler() : _n(0) {
-        _cfg = PeerSchedulerConfig{0.001f, 8.0f, -82.0f, 5, 0.2f};
+        _cfg = PeerSchedulerConfig{0.001f, 8.0f, PS_WEAK_RXPOWER_DBM, 5, 0.2f};
     }
 
     void begin(const PeerSchedulerConfig& cfg) { _cfg = cfg; _n = 0; }

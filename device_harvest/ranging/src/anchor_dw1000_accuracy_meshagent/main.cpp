@@ -40,7 +40,7 @@ static const uint16_t SELF_SHORT = (ANCHOR_ID);
 // slot's work-window holds several TWR exchanges. Raise K_s if many anchors mutually interfere.
 static const SuperframeConfig    SF_CFG  = {4, 120, 10};
 static const MgmConfig           MGM_CFG = {4, 500, 200, 3600};
-static const PeerSchedulerConfig PS_CFG  = {0.001f, 8.0f, NLOS_RXPOWER_THRESHOLD_DBM, 5, 0.2f};
+static const PeerSchedulerConfig PS_CFG  = {0.001f, 8.0f, PS_WEAK_RXPOWER_DBM, 5, 0.2f};
 static const uint32_t LEASE_MS        = 3600;
 static const float    AUDIBLE_THRESH  = -90.0f;
 // A single DS-TWR cycle (POLL->ACK->RANGE->REPORT) is ~35-40ms in 110kbps ACCURACY mode

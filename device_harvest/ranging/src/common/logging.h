@@ -7,8 +7,7 @@
  *
  * Format (CSV): deviceId,range_m,rxPower_dBm,timestamp_ms
  * NLOS is not pre-flagged here: rxPower_dBm is emitted raw and the external system interprets it
- * (firmware carries no fusion/interpretation logic). NLOS_RXPOWER_THRESHOLD_DBM below is used by the
- * on-anchor scheduler (peer_scheduler), not by this CSV.
+ * (firmware carries no fusion/interpretation logic).
  *
  * deviceId is derived from the distant device's short address.
  *   see shortAddrToId(): anchor -> "A{n}", tag -> "T{n}"
@@ -19,10 +18,6 @@
 
 #include <Arduino.h>
 #include <stdint.h>
-
-#ifndef NLOS_RXPOWER_THRESHOLD_DBM
-#define NLOS_RXPOWER_THRESHOLD_DBM   (-82.0f)
-#endif
 
 // short address -> human-readable ID
 // anchor (0x00..0x3F): "A0".."A63"

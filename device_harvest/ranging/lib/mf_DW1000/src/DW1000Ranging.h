@@ -170,8 +170,7 @@ private:
 	// message sent/received state
 	static volatile boolean _sentAck;
 	static volatile boolean _receivedAck;
-	// protocol error state
-	static boolean          _protocolFailed;
+	// (responder protocol-error state is now per-device: DW1000Device::_protocolFailed)
 	// reset line to the chip
 	static uint8_t     _RST;
 	static uint8_t     _SS;
