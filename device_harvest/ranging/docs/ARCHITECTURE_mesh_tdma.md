@@ -1,11 +1,6 @@
 # Architecture: Distributed Multi-Agent UWB TDMA over ESP-MESH (Design v4)
 
-This document is the consolidated, agreed design for **collision-free coordination of UWB
-distance measurement** in a multi-anchor / multi-tag environment.
-For *how* we arrived at these decisions (the constraint-by-constraint evolution), see
-[`DESIGN_FLOW_mesh_tdma.md`](./DESIGN_FLOW_mesh_tdma.md).
-For the detailed design of the coordination layer (L3/L4), see
-[`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md).
+This document is the consolidated, agreed design for **collision-free coordination of UWB distance measurement** in a multi-anchor / multi-tag environment. For *how* we arrived at these decisions (the constraint-by-constraint evolution), see [`DESIGN_FLOW_mesh_tdma.md`](./DESIGN_FLOW_mesh_tdma.md). For the detailed design of the coordination layer (L3/L4), see [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md).
 
 > Note: written in English (overriding the CLAUDE.md "docs in Korean" convention) per explicit
 > request, for terminology clarity.
@@ -34,12 +29,9 @@ For the detailed design of the coordination layer (L3/L4), see
 
 ## 2. Purpose / Scope
 
-- **Purpose**: When several anchors each range 5–10 mobile tags, avoid radio collisions
-  *structurally* while honoring priority (far/weak tags measured less often).
-- **Scope (now)**: the **coordination/MAC layer** only. Result aggregation and positioning (EKF)
-  are external/later.
-- **Out of scope**: absolute position estimation of anchors/tags belongs to the external
-  positioning system (per CLAUDE.md). This design uses only **relative interference relations**.
+- **Purpose**: When several anchors each range 5–10 mobile tags, avoid radio collisions *structurally* while honoring priority (far/weak tags measured less often).
+- **Scope (now)**: the **coordination/MAC layer** only. Result aggregation and positioning (EKF) are external/later.
+- **Out of scope**: absolute position estimation of anchors/tags belongs to the external positioning system (per CLAUDE.md). This design uses only **relative interference relations**.
 
 ## 3. Confirmed Environment Constraints
 
@@ -81,46 +73,34 @@ Tags sit **outside L1–L3** entirely.
 - Anchor = initiator, tag = responder. **Only the polled tag transmits** → zero collision within a color.
 - An anchor sequentially polls **only its own current tag set** during its owned slots.
 - Because many tags exceed the broadcast 4-device limit, **single-device sequential polling** is used.
-- Required mf-DW1000 changes (guarded, backward-compatible): bump `MAX_DEVICES`, expose a
-  single-poll entry point, add a `_scheduledMode` flag, fix single-poll completion
-  (POLL_ACK → single RANGE).
+- Required mf-DW1000 changes (guarded, backward-compatible): bump `MAX_DEVICES`, expose a single-poll entry point, add a `_scheduledMode` flag, fix single-poll completion (POLL_ACK → single RANGE).
 
 ## 7. Control Plane (L1) — ESP-WIFI-MESH
 
-- Self-organizing multi-hop tree, **auto-elected, self-healing root** (no dependence on a specific
-  node; tolerates anchor power churn).
-- Coordination traffic is **low rate** (a few packets per superframe): interference neighbors,
-  demand, slot-phase, lease/slot state.
-- Load mitigation: **pin cores** (WiFi on core 0, ranging loop on core 1), send control messages in
-  the **slot guard interval**, **only anchors run WiFi** (zero load on tags).
-- Caveat: in esp_mesh, node-to-node traffic routes via the root → frequent local gossip can
-  bottleneck. If needed, use a **hybrid (ESP-NOW for local gossip + esp_mesh for structure/aggregation)** (decided at P4).
-- Aggregation promotion: later, attach one node to a router/backend → it becomes the gateway root;
-  keep only an uplink hook in code for now.
+- Self-organizing multi-hop tree, **auto-elected, self-healing root** (no dependence on a specific node; tolerates anchor power churn).
+- Coordination traffic is **low rate** (a few packets per superframe): interference neighbors, demand, slot-phase, lease/slot state.
+- Load mitigation: **pin cores** (WiFi on core 0, ranging loop on core 1), send control messages in the **slot guard interval**, **only anchors run WiFi** (zero load on tags).
+- Caveat: in esp_mesh, node-to-node traffic routes via the root → frequent local gossip can bottleneck. If needed, use a **hybrid (ESP-NOW for local gossip + esp_mesh for structure/aggregation)** (decided at P4).
+- Aggregation promotion: later, attach one node to a router/backend → it becomes the gateway root; keep only an uplink hook in code for now.
 
 ## 8. Multi-Agent Coordination (L3, CORE) — summary
 
 Detailed in [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md). In brief:
 
-- **DCOP**: each anchor is an agent owning a slot variable; constraint = interfering neighbors must
-  differ; objective = maximize reuse + allocate slots proportional to demand.
-- **MGM**: per round, neighbors exchange current value and gain; only the strict local-max-gain
-  agent changes → monotone, non-oscillating convergence.
-- **Channel** is assigned per tag-sharing cluster (slow outer loop); **slot** is the per-agent MGM
-  variable (fast inner loop).
+- **DCOP**: each anchor is an agent owning a slot variable; constraint = interfering neighbors must differ; objective = maximize reuse + allocate slots proportional to demand.
+- **MGM**: per round, neighbors exchange current value and gain; only the strict local-max-gain agent changes → monotone, non-oscillating convergence.
+- **Channel** is assigned per tag-sharing cluster (slow outer loop); **slot** is the per-agent MGM variable (fast inner loop).
 - **Lease** handles power churn: an unrenewed color is reclaimed by neighbors.
 - **Priority** enters as demand weighting (inter-anchor) plus an intra-anchor tag scheduler (L4).
 
 ## 9. Time Sync (slot phase)
 
 - Only **ms-level slot-boundary alignment** is needed. TWR accuracy needs no clock sync.
-- **Local gossip averaging** (rootless, churn/mobility tolerant). No global tight sync → avoids
-  multi-hop error accumulation. Multi-hop jitter is absorbed by **generous guard times**.
+- **Local gossip averaging** (rootless, churn/mobility tolerant). No global tight sync → avoids multi-hop error accumulation. Multi-hop jitter is absorbed by **generous guard times**.
 
 ## 10. Aggregation (L5, later)
 
-- Now: keep the `logRange` CSV format (external EKF contract); reserve only an interface for pushing
-  results onto the mesh.
+- Now: keep the `logRange` CSV format (external EKF contract); reserve only an interface for pushing results onto the mesh.
 - Later: anchor → gateway root → backend/EKF.
 
 ## 11. Roadmap (P3-centric)
@@ -138,8 +118,7 @@ Detailed in [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md). In brief:
 
 ## 12. Variant / Firmware Mapping
 
-- `anchor_dw1000_*_meshagent`: UWB polling + L1–L3 (MGM agent). Macros `FEATURE_MESH` +
-  `FEATURE_AGENT`. (Power profile conflicts with low-power/OLED variants — beware.)
+- `anchor_dw1000_*_meshagent`: UWB polling + L1–L3 (MGM agent). Macros `FEATURE_MESH` + `FEATURE_AGENT`. (Power profile conflicts with low-power/OLED variants — beware.)
 - Tag: reuse existing simple-responder variant; only `MAX_DEVICES` is affected.
 - No coordinator/root-specific variant (auto-elected). Gateway is a P5 build flag.
 - Update `VARIANTS.md` when adding variants (project rule).
@@ -149,8 +128,7 @@ Detailed in [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md). In brief:
 - **Relocation transient collisions**: short, absorbed by the contention safety net.
 - **Power vs mesh**: always-on WiFi is power-hungry → power-save/duty-cycle, quantify in F-b benchmark.
 - **mesh root bottleneck**: local ESP-NOW hybrid (P4).
-- **Convergence vs change rate**: holds under the slow-relocation assumption; if change speeds up,
-  the guarantee weakens and contention share grows.
+- **Convergence vs change rate**: holds under the slow-relocation assumption; if change speeds up, the guarantee weakens and contention share grows.
 - Assumes some anchors keep the mesh alive; node locations are not fixed (occasional moves).
 
 ## 14. Tunable Parameters / Open Items

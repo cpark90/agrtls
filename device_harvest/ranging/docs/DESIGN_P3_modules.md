@@ -1,7 +1,6 @@
 # CORE 1st-Scope — Module API Design
 
-Per-module function signatures and state-transition tables for the four pure, host-testable modules
-of the first CORE pass. See [`DESIGN_P3_scope1.md`](./DESIGN_P3_scope1.md) for the surrounding spec.
+Per-module function signatures and state-transition tables for the four pure, host-testable modules of the first CORE pass. See [`DESIGN_P3_scope1.md`](./DESIGN_P3_scope1.md) for the surrounding spec.
 
 > Written in English per request. Code itself uses Korean comments (CLAUDE.md), English identifiers.
 
@@ -9,8 +8,7 @@ of the first CORE pass. See [`DESIGN_P3_scope1.md`](./DESIGN_P3_scope1.md) for t
 
 ## Shared conventions
 
-- **Pure / host-testable**: no `Arduino.h`, no radio. Time injected as `uint32_t nowMs`. I/O via POD
-  message structs (pull model, no callbacks).
+- **Pure / host-testable**: no `Arduino.h`, no radio. Time injected as `uint32_t nowMs`. I/O via POD message structs (pull model, no callbacks).
 - **No dynamic allocation**: fixed-size arrays. `MAX_TAGS = 12` (= `MAX_DEVICES`), `MAX_NEIGHBORS = 12`.
 - Sentinels: `PS_NONE = 0xFFFF` (tag addr), `MGM_NONE = 0xFF` (slot).
 - The `*_meshagent` variant only wires ESP-MESH/UWB to these modules.
@@ -50,8 +48,7 @@ class PeerScheduler {
   float   weightOf(uint16_t addr) const;
 };
 ```
-Rules: `w(t) = max(weightMin, 1 − badStreak/badStreakLimit)`, `agingRate(t) = agingRateBase·w(t)`.
-`badStreak` rises while `range>FAR` or `rxp<WEAK` (or on failure), resets on a good sample.
+Rules: `w(t) = max(weightMin, 1 − badStreak/badStreakLimit)`, `agingRate(t) = agingRateBase·w(t)`. `badStreak` rises while `range>FAR` or `rxp<WEAK` (or on failure), resets on a good sample.
 
 ## 3. `interference.h` — fused interference graph + lease
 
