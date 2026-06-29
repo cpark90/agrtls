@@ -35,8 +35,13 @@
 static const uint16_t SELF_SHORT = (ANCHOR_ID);
 
 // First-cut timing (tune in W-4): window = slotsPerWindow*slotLen; superframe = numWindows*window.
-static const WindowFrameConfig WF_CFG = {4 /*windows*/, 4 /*slots*/, 120 /*slotLen*/, 10 /*guard*/};
-static const uint8_t  MY_SLOT          = (ANCHOR_ID) % 4;   // anchor-slot within a window (< slotsPerWindow)
+// numWindows is set dynamically each recolor (active windows + 1 trailing probe window); the 1 here
+// is just the initial/bootstrap value. slotsPerWindow caps anchors per window; keep it small so the
+// superframe stays well under the responder inactivity timeout (one poll/slot -> one poll/tag per
+// superframe must refresh the device). Proper anchor-slot coloring (more anchors) = later work.
+#define SLOTS_PER_WINDOW 2
+static const WindowFrameConfig WF_CFG = {1 /*windows (dynamic)*/, SLOTS_PER_WINDOW, 120 /*slotLen*/, 10 /*guard*/};
+static const uint8_t  MY_SLOT          = (ANCHOR_ID) % SLOTS_PER_WINDOW;   // anchor-slot within a window
 static const uint32_t PUBLISH_MS       = 700;
 static const uint32_t RECOLOR_MS       = 700;
 static const uint32_t STATUS_MS        = 2000;
@@ -51,12 +56,18 @@ MeshLink     mesh;
 // my own measurements (for publishing TAGINFO)
 static TagInfoEntry myMeas[MY_MEAS_MAX];
 static uint8_t      myMeasN = 0;
-// discovered tags (for bootstrap seeding of unranged tags)
+// discovered tags (for bootstrap / candidate probing of tags without a normal window)
 static uint16_t disc[MY_MEAS_MAX];
-static uint8_t  discN = 0, seedIdx = 0;
+static uint8_t  discN = 0;
+// probe set rebuilt each recolor: discovered tags that have NO active window (candidates + unranged).
+// Polled round-robin in the single trailing probe window so no tag is ever permanently excluded.
+static uint16_t probeList[WC_MAX_TAGS];
+static uint8_t  probeN = 0, probeIdx = 0;
+static uint8_t  activeW = 0;   // number of active (localization) windows = wc.numWindows()
 
 static uint16_t pollTarget  = WC_NONE;
 static uint32_t pollStartMs = 0;
+static uint32_t lastPolledSlot = 0xFFFFFFFF;   // last slot instance we already polled in (one poll/slot)
 static uint32_t lastPublish = 0, lastRecolor = 0, lastStat = 0;
 static uint32_t g_ranges = 0;
 
@@ -143,27 +154,51 @@ void loop() {
     meshPump(now);
     if ((uint32_t)(now - lastRecolor) >= RECOLOR_MS) {
         lastRecolor = now;
-        wc.build(reg, WF_CFG.numWindows);
+        wc.build(reg, WC_MAX_WINDOWS);
+        activeW = wc.numWindows();                 // shared across anchors (deterministic on registry)
+        // probe set (local) = discovered tags THIS anchor is not yet effective for. Covers: bootstrap
+        // (never ranged -> must measure once to learn its link), global candidates (far/weak tags), and
+        // weak-link re-probe. Tags SELF is already effective for are ranged in their active window, so
+        // they are excluded here. Without this an anchor could never start ranging an active tag it had
+        // not previously measured (it is not in tagForWindow until effective -> deadlock).
+        probeN = 0;
+        for (uint8_t i = 0; i < discN && probeN < WC_MAX_TAGS; i++)
+            if (!reg.isEffectiveAnchor(disc[i], SELF_SHORT)) probeList[probeN++] = disc[i];
+        // Cycle ONLY active windows + one trailing probe window. Empty windows are never traversed.
+        // total must be identical on every anchor (epoch sync) -> derive from shared activeW only.
+        wf.setNumWindows((uint8_t)(activeW + 1));
     }
     meshPublish(now);
 
     if (pollTarget != WC_NONE && (uint32_t)(now - pollStartMs) > POLL_TIMEOUT_MS) {
-        reg.report(SELF_SHORT, pollTarget, /*weak*/ -120.0f, 0.0f);   // failed -> ineligible sample
+        // Poll timed out: just clear it and retry next slot. Do NOT report a fake weak (-120) sample --
+        // a single transient timeout (collision/jitter) must not wipe a good link and flip the tag to
+        // candidate, which would desync the per-anchor coloring (different superframe lengths -> epoch
+        // drift). Stale/unreachable links should be handled by registry-entry aging (future work).
         pollTarget = WC_NONE;
     }
 
-    // poll only in my anchor-slot of the current window, during work time
-    if (pollTarget == WC_NONE && wf.slotIndexNow(now) == MY_SLOT && wf.isWork(now)) {
+    // poll AT MOST ONCE per slot, in my anchor-slot of the current window, during work time.
+    // (one poll/slot: a greedy re-poll would spill the exchange past the slot edge and collide with
+    //  the next anchor's slot -> keep one clean exchange per slot.)
+    if (pollTarget == WC_NONE && wf.slotIndexNow(now) == MY_SLOT && wf.isWork(now)
+        && wf.slotNumber(now) != lastPolledSlot) {
         uint8_t  k = wf.windowIndexNow(now);
-        uint16_t target = wc.tagForWindow(reg, SELF_SHORT, k);
-        if (target == WC_NONE && discN > 0) {       // bootstrap: seed an unranged/known tag
-            target = disc[seedIdx % discN];
-            seedIdx++;
+        uint16_t target = WC_NONE;
+        if (k < activeW) {
+            target = wc.tagForWindow(reg, SELF_SHORT, k);     // localization window: the colored tag
+        } else if (probeN > 0) {                              // trailing probe window: re-admit/bootstrap
+            target = probeList[probeIdx % probeN];
+            probeIdx++;
         }
         if (target != WC_NONE) {
             byte sa[2] = { (byte)(target & 0xFF), (byte)((target >> 8) & 0xFF) };
             DW1000Device* d = DW1000Ranging.searchDistantDevice(sa);
-            if (d != nullptr) { DW1000Ranging.pollDevice(d); pollTarget = target; pollStartMs = now; }
+            if (d != nullptr) {
+                DW1000Ranging.pollDevice(d);
+                pollTarget = target; pollStartMs = now;
+                lastPolledSlot = wf.slotNumber(now);          // consume this slot's single poll
+            }
         }
     }
 
@@ -171,7 +206,9 @@ void loop() {
         lastStat = now;
         Serial.print("# A"); Serial.print(ANCHOR_ID);
         Serial.print(" win="); Serial.print(wf.windowIndexNow(now));
-        Serial.print("/");     Serial.print(wc.numWindows());
+        Serial.print("/");     Serial.print(wf.numWindows());
+        Serial.print(" act="); Serial.print(activeW);
+        Serial.print(" probe="); Serial.print(probeN);
         Serial.print(" disc="); Serial.print(discN);
         Serial.print(" ranges="); Serial.print(g_ranges);
         // schedule dump: tag -> window (or 'c' = candidate). Compare across anchors: should match.

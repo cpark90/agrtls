@@ -68,6 +68,15 @@ public:
         return c;
     }
 
+    // Does anchorId currently have an eligible link to tagId? Used to decide whether an anchor still
+    // needs to (boot)probe a tag (it is NOT yet effective) vs. range it in the tag's active window.
+    bool isEffectiveAnchor(uint16_t tagId, uint16_t anchorId) const {
+        for (uint8_t i = 0; i < _n; i++)
+            if (_e[i].tag == tagId && _e[i].anchor == anchorId)
+                return linkEligible(_e[i].rxp, _e[i].range);
+        return false;
+    }
+
     // Two tags conflict iff some anchor ranges both effectively.
     bool conflict(uint16_t t1, uint16_t t2) const {
         for (uint8_t i = 0; i < _n; i++) {

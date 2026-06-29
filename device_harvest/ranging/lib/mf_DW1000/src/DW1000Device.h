@@ -89,6 +89,15 @@ public:
 	void    noteActivity();
 	boolean isInactive();
 
+	// Per-device responder protocol state. In window-TDMA many initiators (anchors) range the same
+	// responder (tag); a single global expected-message would let one initiator's exchange clobber
+	// another's. Keeping it per distant device makes concurrent/interleaved exchanges independent.
+	// Default 0 == POLL (the first message of an exchange).
+	void    setExpectedMsg(byte msg) { _rxExpectedMsg = msg; }
+	byte    getExpectedMsg() const   { return _rxExpectedMsg; }
+	void    setProtocolFailed(boolean f) { _protocolFailed = f; }
+	boolean getProtocolFailed() const    { return _protocolFailed; }
+
 
 private:
 	//device ID
@@ -97,6 +106,8 @@ private:
 	int32_t      _activity;
 	uint16_t     _replyDelayTimeUS;
 	int8_t       _index; // not used
+	byte         _rxExpectedMsg = 0;       // POLL; per-device responder expected next message
+	boolean      _protocolFailed = false;  // per-device responder exchange failure flag
 	
 	int16_t _range;
 	int16_t _RXPower;

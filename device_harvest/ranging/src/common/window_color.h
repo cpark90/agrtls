@@ -24,6 +24,9 @@
 #ifndef WC_MAX_TAGS
 #define WC_MAX_TAGS 24
 #endif
+#ifndef WC_MAX_WINDOWS
+#define WC_MAX_WINDOWS 10      // upper bound on ACTIVE (localization) windows -> bounds superframe length
+#endif
 #define WC_CANDIDATE 0xFF      // not assigned to a normal window
 #define WC_NONE      0xFFFF
 

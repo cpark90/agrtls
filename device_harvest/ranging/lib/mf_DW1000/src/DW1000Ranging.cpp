@@ -247,6 +247,9 @@ boolean DW1000RangingClass::addNetworkDevices(DW1000Device* device, boolean shor
 	}
 	
 	if(addDevice) {
+		if(_networkDevicesNumber >= MAX_DEVICES) {
+			return false;
+		}
 		device->setRange(0);
 		memcpy(&_networkDevices[_networkDevicesNumber], device, sizeof(DW1000Device));
 		_networkDevices[_networkDevicesNumber].setIndex(_networkDevicesNumber);
@@ -259,21 +262,29 @@ boolean DW1000RangingClass::addNetworkDevices(DW1000Device* device, boolean shor
 
 boolean DW1000RangingClass::addNetworkDevices(DW1000Device* device) {
 	boolean addDevice = true;
-	//we test our network devices array to check
-	//we don't already have it
+	//we test our network devices array to check we don't already have it.
+	// Identity = SHORT address: a device admitted by admit-on-POLL (short only) and the same device
+	// seen later via BLINK (long+short) must NOT create two entries -> otherwise a POLL would set the
+	// per-device expected-msg on one entry while the RANGE reads the other (exp stuck at POLL). The
+	// short address is unique by our addressing scheme, so it is the identity.
 	for(uint8_t i = 0; i < _networkDevicesNumber; i++) {
-		if(_networkDevices[i].isAddressEqual(device) && _networkDevices[i].isShortAddressEqual(device)) {
+		if(_networkDevices[i].isShortAddressEqual(device)) {
 			//the device already exists
 			addDevice = false;
 			return false;
 		}
-		
+
 	}
 	
 	if(addDevice) {
-		if(_type == ANCHOR) //for now let's start with 1 TAG
-		{
-			_networkDevicesNumber = 0;
+		// Window-TDMA needs a responder (_type==ANCHOR) to hold MANY initiators (anchors) at once so
+		// several anchors can range the same tag within one window -> the tag's ranges are clustered
+		// in time (required for localization). The original demo reset to a single device here
+		// ("1 TAG"); we instead accumulate up to MAX_DEVICES. TDMA slot scheduling keeps the
+		// per-initiator exchanges from interleaving, so the single _expectedMsgId state stays valid.
+		// The reset previously also bounded the array, so add an explicit MAX_DEVICES guard.
+		if(_networkDevicesNumber >= MAX_DEVICES) {
+			return false;
 		}
 		memcpy(&_networkDevices[_networkDevicesNumber], device, sizeof(DW1000Device));
 		_networkDevices[_networkDevicesNumber].setIndex(_networkDevicesNumber);
@@ -503,8 +514,30 @@ void DW1000RangingClass::loop() {
 			
 			//we get the device which correspond to the message which was sent (need to be filtered by MAC address)
 			DW1000Device* myDistantDevice = searchDistantDevice(address);
-			
-			
+
+			// admit-on-POLL: a responder must serve ANY initiator that polls it, with no permanent
+			// exclusion (mirrors the scheduler's candidate principle at the radio layer). An initiator
+			// that aged out of the table re-enters on its next POLL instead of needing a fresh BLINK.
+			// Only admit if the POLL is actually addressed to us (a poll for another tag that we merely
+			// overhear must NOT register the sender -> that would churn the table with no exchange).
+			if(myDistantDevice == nullptr && _type == ANCHOR && messageType == POLL) {
+				uint8_t pollCount = data[SHORT_MAC_LEN+1];
+				boolean forUs = false;
+				for(uint8_t i = 0; i < pollCount; i++) {
+					if(data[SHORT_MAC_LEN+2+i*4]   == _currentShortAddress[0] &&
+					   data[SHORT_MAC_LEN+2+i*4+1] == _currentShortAddress[1]) { forUs = true; break; }
+				}
+				if(forUs) {
+					DW1000Device polledBy(address, true /*shortAddress*/);
+					if(addNetworkDevices(&polledBy, true)) {
+						myDistantDevice = searchDistantDevice(address);
+						if(_handleNewDevice != 0 && myDistantDevice != nullptr) {
+							(*_handleNewDevice)(myDistantDevice);
+						}
+					}
+				}
+			}
+
 			if((_networkDevicesNumber == 0) || (myDistantDevice == nullptr)) {
 				// overhearing: heard an untracked source (e.g. another anchor) -> report to L2 sensing.
 				// address = decoded source short address, passed to the callback with RX power.
@@ -520,16 +553,15 @@ void DW1000RangingClass::loop() {
 			
 			//then we proceed to range protocole
 			if(_type == ANCHOR) {
-				if(messageType != _expectedMsgId) {
-					// unexpected message, start over again (except if already POLL)
-					_protocolFailed = true;
+				if(messageType != myDistantDevice->getExpectedMsg()) {
+					// unexpected message for THIS device, start over again (except if already POLL)
+					myDistantDevice->setProtocolFailed(true);
 				}
 				if(messageType == POLL) {
 					//we receive a POLL which is a broacast message
 					//we need to grab info about it
 					int16_t numberDevices = 0;
 					memcpy(&numberDevices, data+SHORT_MAC_LEN+1, 1);
-					
 					for(uint16_t i = 0; i < numberDevices; i++) {
 						//we need to test if this value is for us:
 						//we grab the mac address of each devices:
@@ -544,14 +576,14 @@ void DW1000RangingClass::loop() {
 							//we configure our replyTime;
 							_replyDelayTimeUS = replyTime;
 							
-							// on POLL we (re-)start, so no protocol failure
-							_protocolFailed = false;
-							
+							// on POLL we (re-)start, so no protocol failure (per device)
+							myDistantDevice->setProtocolFailed(false);
+
 							DW1000.getReceiveTimestamp(myDistantDevice->timePollReceived);
 							//we note activity for our device:
 							myDistantDevice->noteActivity();
-							//we indicate our next receive message for our ranging protocole
-							_expectedMsgId = RANGE;
+							//we indicate our next receive message for our ranging protocole (per device)
+							myDistantDevice->setExpectedMsg(RANGE);
 							transmitPollAck(myDistantDevice);
 							noteActivity();
 							
@@ -580,9 +612,9 @@ void DW1000RangingClass::loop() {
 							//we grab the replytime wich is for us
 							DW1000.getReceiveTimestamp(myDistantDevice->timeRangeReceived);
 							noteActivity();
-							_expectedMsgId = POLL;
-							
-							if(!_protocolFailed) {
+							myDistantDevice->setExpectedMsg(POLL);
+
+							if(!myDistantDevice->getProtocolFailed()) {
 								
 								myDistantDevice->timePollSent.setTimestamp(data+SHORT_MAC_LEN+4+17*i);
 								myDistantDevice->timePollAckReceived.setTimestamp(data+SHORT_MAC_LEN+9+17*i);

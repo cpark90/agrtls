@@ -29,6 +29,12 @@ public:
     void setEpoch(uint32_t epochMs) { _epochMs = epochMs; _synced = true; }
     bool synced() const { return _synced; }
 
+    // Number of windows the superframe currently cycles. Driven dynamically from the (shared)
+    // coloring so empty windows are never traversed; must stay identical across anchors (derive it
+    // only from shared state) or epoch sync drifts. Clamped to >=1 (superframe length must be > 0).
+    void setNumWindows(uint8_t n) { _cfg.numWindows = (n == 0) ? 1 : n; }
+    uint8_t numWindows() const { return _cfg.numWindows; }
+
     uint32_t windowLenMs()    const { return (uint32_t)_cfg.slotsPerWindow * _cfg.slotLenMs; }
     uint32_t superframeLenMs() const { return (uint32_t)_cfg.numWindows * windowLenMs(); }
 
@@ -42,6 +48,11 @@ public:
     }
     uint8_t slotIndexNow(uint32_t nowMs) const {
         return (uint8_t)((phaseMs(nowMs) % windowLenMs()) / _cfg.slotLenMs);
+    }
+    // Monotonic slot instance id (does not wrap) — lets the caller poll at most once per slot.
+    uint32_t slotNumber(uint32_t nowMs) const {
+        if (!_synced) return 0;
+        return (uint32_t)(nowMs - _epochMs) / _cfg.slotLenMs;
     }
 
     // Within the work part of the current anchor-slot (guards at both ends excluded)?
