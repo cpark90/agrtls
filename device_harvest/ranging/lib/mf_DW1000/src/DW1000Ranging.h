@@ -107,6 +107,10 @@ public:
 	//ranging functions
 	static int16_t detectMessageType(byte datas[]); // TODO check return type
 	static void loop();
+	// Role-split loops for the window-TDMA variants (clean single-role copies of loop() + a
+	// destination check). loop() stays the shared loop for native/meshagent. See DW1000Ranging.cpp.
+	static void loopInitiator();   // mf-DW1000 _type==TAG  (anchor_dw1000_window)
+	static void loopResponder();   // mf-DW1000 _type==ANCHOR (tag_dw1000_responder)
 
 	// --- scheduled single-device polling (CORE TDMA, for mesh-TDMA variants) ---
 	// When scheduledMode is on, timerTick's auto-broadcast POLL is disabled (BLINK is kept).
@@ -226,6 +230,9 @@ private:
 	static void transmitPoll(DW1000Device* myDistantDevice);
 	static void transmitRange(DW1000Device* myDistantDevice);
 	
+	// short-MAC destination filter (used by loopInitiator/loopResponder)
+	static boolean frameForMe(byte frame[]);
+
 	//methods for range computation
 	static void computeRangeAsymmetric(DW1000Device* myDistantDevice, DW1000Time* myTOF);
 	

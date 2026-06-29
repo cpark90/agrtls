@@ -142,7 +142,7 @@ void setup() {
 }
 
 void loop() {
-    DW1000Ranging.loop();
+    DW1000Ranging.loopInitiator();
     uint32_t now = millis();
 
     meshPump(now);

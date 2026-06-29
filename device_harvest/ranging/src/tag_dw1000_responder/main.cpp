@@ -39,4 +39,4 @@ void setup() {
     DW1000Ranging.startAsResponder(selfAddr, RF_MODE, false);  // reply to polls only
     applyRfConfigDW1000();
 }
-void loop() { DW1000Ranging.loop(); }
+void loop() { DW1000Ranging.loopResponder(); }
