@@ -1,51 +1,51 @@
-// UWB positioning node.
+// UWB positioning node — tightly coupled EKF on raw range measurements.
 //
-// Reads anchor-distance frames from a UWB32 module over serial, computes the
-// tag position via multilateration, and publishes UwbPosition.
+// Serial frame format (one per line):
+//   "<device_id>,<range_m>,<rx_power_dbm>"
+//   e.g.  "A0,1.234,-78.5"
 //
-// STUBS:
-//   parseFrame()     — frame format is unknown; replace once protocol is confirmed.
-//   multilaterate()  — returns (0,0,0) until anchor positions are set in params.yaml
-//                      and the algorithm is implemented (linear LS recommended).
+// Startup sequence:
+//   1. Accumulate one measurement per anchor.
+//   2. Run weighted trilateration → initial position.
+//   3. Initialise EKF from that position.
+//   4. Each subsequent frame:  predict to now → sequential EKF update → publish.
+//
+// All parameters are in config/params.yaml; nothing is hardcoded here.
 #include <ros/ros.h>
 #include <uwb_positioning/UwbPosition.h>
 #include <uwb_positioning/serial_port.h>
+#include <uwb_positioning/uwb_ekf.h>
 
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <vector>
-#include <cmath>
 
 namespace {
 
-// STUB: expects one ASCII line of comma-separated distances, e.g. "1.23,4.56,7.89,10.1".
-// Each value is the measured distance (m) to the corresponding anchor.
-// Returns false to drop malformed frames.
-bool parseFrame(const std::string& raw, std::vector<double>& distances) {
-  distances.clear();
-  std::stringstream ss(raw);
+// Parse one ASCII frame: "<id>,<range_m>,<rx_power_dbm>"
+// Returns false to drop malformed lines.
+bool parseFrame(const std::string& line,
+                std::string& id, double& range, double& rx_power) {
+  std::istringstream ss(line);
   std::string tok;
-  while (std::getline(ss, tok, ',')) {
-    try {
-      distances.push_back(std::stod(tok));
-    } catch (const std::exception&) {
-      return false;
-    }
-  }
-  return !distances.empty();
+  if (!std::getline(ss, tok, ',') || tok.empty()) return false;
+  id = tok;
+  if (!std::getline(ss, tok, ',')) return false;
+  try { range = std::stod(tok); } catch (...) { return false; }
+  if (!std::getline(ss, tok, ',')) return false;
+  try { rx_power = std::stod(tok); } catch (...) { return false; }
+  return range > 0.0;
 }
 
-struct Vec3 { double x, y, z; };
-
-// STUB: linear least-squares multilateration.
-// TODO: set anchor positions in params.yaml, then implement the linearised LS solver.
-// For 2D (all z == 0) at least 3 anchors are needed; 4 for 3D.
-bool multilaterate(const std::vector<Vec3>& anchors,
-                   const std::vector<double>& dists,
-                   Vec3& out) {
-  if (anchors.size() < 3 || anchors.size() != dists.size()) return false;
-  out = {0.0, 0.0, 0.0};  // replace with real solver
-  return false;
+// rx_power (dBm) → trilateration weight = 1 / sigma_r^2
+// Uses the same noise model as the EKF so weights are consistent.
+double rxToWeight(double rx_power_dbm, double rx_ref_dbm,
+                  double rx_decay_db, double sigma_r) {
+  const double loss_db    = std::max(0.0, rx_ref_dbm - rx_power_dbm);
+  const double noise_gain = std::pow(10.0, loss_db / rx_decay_db);
+  const double sigma      = sigma_r * noise_gain;
+  return 1.0 / (sigma * sigma);
 }
 
 }  // namespace
@@ -55,68 +55,154 @@ int main(int argc, char** argv) {
   ros::NodeHandle nh;
   ros::NodeHandle pnh("~");
 
+  // ---- Basic params ----
   std::string port, frame_id, topic;
-  int baud = 115200;
+  int    baud         = 115200;
   double read_timeout = 1.0;
 
   if (!pnh.getParam("port", port)) {
-    ROS_FATAL("missing required param: ~port");
+    ROS_FATAL("uwb_node: missing required param ~port");
     return 1;
   }
-  pnh.param<std::string>("topic",    topic,    "/uwb/position");
-  pnh.param<std::string>("frame_id", frame_id, "uwb");
+  pnh.param<std::string>("topic",        topic,        "/uwb/position");
+  pnh.param<std::string>("frame_id",     frame_id,     "uwb");
   pnh.param("baud",         baud,         115200);
   pnh.param("read_timeout", read_timeout, 1.0);
 
-  // Anchor positions from params.yaml: anchors: [[x0,y0,z0], [x1,y1,z1], ...]
-  std::vector<Vec3> anchors;
-  XmlRpc::XmlRpcValue anchor_list;
-  if (pnh.getParam("anchors", anchor_list)) {
-    for (int i = 0; i < anchor_list.size(); ++i) {
-      Vec3 p;
-      p.x = static_cast<double>(anchor_list[i][0]);
-      p.y = static_cast<double>(anchor_list[i][1]);
-      p.z = static_cast<double>(anchor_list[i][2]);
-      anchors.push_back(p);
+  // ---- EKF / noise params ----
+  double sigma_a, sigma_r, rx_ref_dbm, rx_decay_db;
+  pnh.param("ekf/sigma_a",      sigma_a,     0.3);
+  pnh.param("ekf/sigma_r",      sigma_r,     0.10);
+  pnh.param("ekf/rx_ref_dbm",   rx_ref_dbm,  -70.0);
+  pnh.param("ekf/rx_decay_db",  rx_decay_db,  20.0);
+
+  // ---- Anchor table ----
+  // params.yaml:
+  //   anchors:
+  //     - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
+  //     - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
+  std::vector<uwb_positioning::Anchor> anchor_list;
+  std::unordered_map<std::string, size_t> anchor_idx;  // id → index in anchor_list
+
+  XmlRpc::XmlRpcValue raw_anchors;
+  if (pnh.getParam("anchors", raw_anchors) &&
+      raw_anchors.getType() == XmlRpc::XmlRpcValue::TypeArray) {
+    for (int i = 0; i < raw_anchors.size(); ++i) {
+      uwb_positioning::Anchor a;
+      a.id = static_cast<std::string>(raw_anchors[i]["id"]);
+      a.x  = static_cast<double>(raw_anchors[i]["x"]);
+      a.y  = static_cast<double>(raw_anchors[i]["y"]);
+      a.z  = static_cast<double>(raw_anchors[i]["z"]);
+      anchor_idx[a.id] = anchor_list.size();
+      anchor_list.push_back(a);
     }
   }
-  if (anchors.empty())
-    ROS_WARN("no anchor positions configured — position will be (0,0,0)");
+  if (anchor_list.empty()) {
+    ROS_FATAL("uwb_node: no anchors configured — set ~anchors in params.yaml");
+    return 1;
+  }
+  ROS_INFO("uwb_node: %zu anchors configured", anchor_list.size());
 
+  // ---- EKF setup ----
+  uwb_positioning::UwbEkf ekf;
+  ekf.configure(sigma_a, sigma_r, rx_ref_dbm, rx_decay_db);
+
+  // Per-anchor measurement cache: latest (range, rx_power) for each anchor.
+  // Used to accumulate readings for trilateration-based initialisation.
+  struct Meas { double range; double rx_power; bool valid = false; };
+  std::vector<Meas> cache(anchor_list.size());
+
+  // Latest range per anchor for the published message field anchor_distances[].
+  std::vector<double> last_ranges(anchor_list.size(), 0.0);
+
+  // ---- Publisher ----
   ros::Publisher pub = nh.advertise<uwb_positioning::UwbPosition>(topic, 100);
 
+  // ---- Serial port ----
   uwb_positioning::SerialPort sp;
   try {
     sp.open(port, baud);
   } catch (const std::exception& e) {
-    ROS_FATAL("cannot open %s: %s", port.c_str(), e.what());
+    ROS_FATAL("uwb_node: cannot open %s: %s", port.c_str(), e.what());
     return 1;
   }
   ROS_INFO("uwb_node: %s @ %d baud -> %s", port.c_str(), baud, topic.c_str());
 
+  // ---- Main loop ----
   std::string line;
-  std::vector<double> dists;
   while (ros::ok()) {
     if (!sp.readLine(line, read_timeout)) continue;
     if (line.empty()) continue;
-    if (!parseFrame(line, dists)) {
-      ROS_WARN_THROTTLE(5.0, "unparseable UWB frame: %s", line.c_str());
+
+    std::string id;
+    double range, rx_power;
+    if (!parseFrame(line, id, range, rx_power)) {
+      ROS_WARN_THROTTLE(5.0, "uwb_node: unparseable frame: %s", line.c_str());
       continue;
     }
 
+    auto it = anchor_idx.find(id);
+    if (it == anchor_idx.end()) {
+      ROS_WARN_THROTTLE(10.0, "uwb_node: unknown anchor id '%s' — add to params.yaml",
+                        id.c_str());
+      continue;
+    }
+    const size_t idx    = it->second;
+    const double t_now  = ros::Time::now().toSec();
+
+    cache[idx]       = {range, rx_power, true};
+    last_ranges[idx] = range;
+
+    // ---- Initialisation via trilateration ----
+    if (!ekf.isInitialized()) {
+      // Collect valid anchors that have at least one measurement.
+      std::vector<uwb_positioning::Anchor> valid_anchors;
+      std::vector<double> valid_ranges, valid_weights;
+      for (size_t i = 0; i < anchor_list.size(); ++i) {
+        if (!cache[i].valid) continue;
+        valid_anchors.push_back(anchor_list[i]);
+        valid_ranges.push_back(cache[i].range);
+        valid_weights.push_back(
+            rxToWeight(cache[i].rx_power, rx_ref_dbm, rx_decay_db, sigma_r));
+      }
+      if (valid_anchors.size() < 3) {
+        ROS_INFO_THROTTLE(2.0, "uwb_node: waiting for >= 3 anchors to initialise "
+                               "(%zu/%zu)", valid_anchors.size(), anchor_list.size());
+        continue;
+      }
+      double ix, iy, iz;
+      if (!uwb_positioning::trilaterate(valid_anchors, valid_ranges, valid_weights,
+                                        ix, iy, iz)) {
+        ROS_WARN_THROTTLE(2.0, "uwb_node: trilateration failed (degenerate geometry) "
+                               "— check anchor positions");
+        continue;
+      }
+      ekf.init(ix, iy, iz, t_now);
+      ROS_INFO("uwb_node: EKF initialised at (%.3f, %.3f, %.3f)", ix, iy, iz);
+      continue;  // use next frame for first predict+update cycle
+    }
+
+    // ---- Predict + sequential update ----
+    ekf.predict(t_now);
+    ekf.update(anchor_list[idx], range, rx_power);
+
+    // ---- Publish ----
     uwb_positioning::UwbPosition msg;
     msg.header.stamp    = ros::Time::now();
     msg.header.frame_id = frame_id;
-    msg.anchor_distances = dists;
+    msg.x = ekf.posX();
+    msg.y = ekf.posY();
+    msg.z = ekf.posZ();
 
-    Vec3 pos;
-    if (!multilaterate(anchors, dists, pos))
-      ROS_WARN_THROTTLE(10.0, "multilateration failed — set anchor positions in params.yaml");
-    msg.x = pos.x;
-    msg.y = pos.y;
-    msg.z = pos.z;
+    // Fill 3x3 position covariance (row-major)
+    const Eigen::Matrix3d cov = ekf.positionCovariance();
+    for (int r = 0; r < 3; ++r)
+      for (int c = 0; c < 3; ++c)
+        msg.position_covariance[r*3 + c] = cov(r, c);
 
+    msg.anchor_distances = last_ranges;
     pub.publish(msg);
+
     ros::spinOnce();
   }
 

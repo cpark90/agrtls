@@ -35,6 +35,11 @@ int main(int argc, char** argv) {
     uwb.x = 1.0 + 0.01 * i;
     uwb.y = 2.0;
     uwb.z = 0.0;
+    // Fake diagonal position covariance (0.01 m^2 on x,y,z)
+    uwb.position_covariance.fill(0.0);
+    uwb.position_covariance[0] = 0.01;
+    uwb.position_covariance[4] = 0.01;
+    uwb.position_covariance[8] = 0.01;
     uwb.anchor_distances = {1.5, 2.5, 3.0, 2.0};
     pub_uwb.publish(uwb);
 

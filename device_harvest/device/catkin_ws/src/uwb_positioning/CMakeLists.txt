@@ -3,6 +3,7 @@ project(uwb_positioning)
 
 add_compile_options(-std=c++14)
 
+find_package(Eigen3 REQUIRED)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   std_msgs
@@ -27,6 +28,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${EIGEN3_INCLUDE_DIR}
 )
 
 add_executable(uwb_node src/uwb_node.cpp)

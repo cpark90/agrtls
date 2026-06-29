@@ -5,11 +5,31 @@ uwb_node:
   topic: "/uwb/position"
   read_timeout: 1.0                          # seconds; keeps loop responsive to shutdown
 
-  # Known anchor positions in the world frame (metres).
-  # Add/remove entries to match your deployment.
-  # Order must match the distance values in each UWB32 serial frame.
+  # ---- Anchor table ----
+  # id must match the device_id field in the serial frame ("<id>,<range>,<rx_power>").
+  # Positions are in the world frame (metres).  Add/remove to match your deployment.
   anchors:
-    - [0.0, 0.0, 0.0]   # anchor 0
-    - [3.0, 0.0, 0.0]   # anchor 1
-    - [0.0, 3.0, 0.0]   # anchor 2
-    - [3.0, 3.0, 0.0]   # anchor 3
+    - {id: "A0", x: 0.0, y: 0.0, z: 0.0}
+    - {id: "A1", x: 3.0, y: 0.0, z: 0.0}
+    - {id: "A2", x: 0.0, y: 3.0, z: 0.0}
+    - {id: "A3", x: 3.0, y: 3.0, z: 0.0}
+
+  # ---- EKF / noise parameters ----
+  ekf:
+    # Acceleration noise spectral density (m/s^2).
+    # Higher → trust measurements more, follow faster motion.
+    # Lower  → smoother output, lags sudden moves.
+    sigma_a: 0.3
+
+    # Range measurement std-dev (m) at the reference rx_power level.
+    # Typical DW1000/DW3000 ranging accuracy ~5-10 cm in clear LOS.
+    sigma_r: 0.10
+
+    # rx_power (dBm) at which sigma_r applies (strong-signal baseline).
+    # Measurements weaker than this are down-weighted automatically.
+    rx_ref_dbm: -70.0
+
+    # Signal drop (dB) that multiplies range noise by 10x.
+    # 20 dB → each 20 dB of additional path loss makes noise 10x worse.
+    # Set to a large value (e.g. 1000) to disable rx-based noise scaling.
+    rx_decay_db: 20.0
