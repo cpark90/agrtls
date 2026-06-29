@@ -28,8 +28,6 @@ void newRange() {
     shortAddrToId(d->getShortAddress(), devId, sizeof(devId));  // the polling tag -> "T.."
     logRange(devId, d->getRange(), d->getRXPower());
 }
-void newDevice(DW1000Device* d)      { Serial.print("# +dev "); Serial.println(d->getShortAddress(), HEX); }
-void inactiveDevice(DW1000Device* d) { Serial.print("# -dev "); Serial.println(d->getShortAddress(), HEX); }
 
 void setup() {
     Serial.begin(115200); delay(200);
@@ -39,8 +37,6 @@ void setup() {
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI);
     DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ);
     DW1000Ranging.attachNewRange(newRange);
-    DW1000Ranging.attachNewDevice(newDevice);
-    DW1000Ranging.attachInactiveDevice(inactiveDevice);
     DW1000Ranging.startAsAnchor(selfAddr, RF_MODE, false);  // responder
     applyRfConfigDW1000();
 }

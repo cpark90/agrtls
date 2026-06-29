@@ -61,12 +61,6 @@ static uint16_t pollTarget  = PS_NONE;
 static uint32_t pollStartMs = 0;
 static uint32_t lastPublishMs = 0;
 
-// Periodic status telemetry (slot/neighbor/tag/range health)
-static const uint32_t STATUS_PERIOD_MS = 2000;
-static uint32_t g_ranges   = 0;
-static uint32_t g_meshRx   = 0;   // mesh frames received (ESP-NOW reception sanity)
-static uint32_t lastStatMs = 0;
-
 // ---- L3 outbound (ESP-NOW broadcast) ----
 static void meshSendValue(const ValueMsg& v) {
     uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packValue(v, b));
@@ -84,9 +78,8 @@ void newRange() {
     float p = d->getRXPower();
     char devId[8];
     shortAddrToId(sa, devId, sizeof(devId));
-    logRange(devId, r, p);                         // CSV: deviceId,range,rxp,ts,nlos
+    logRange(devId, r, p);                         // CSV: deviceId,range,rxp,ts
     sched.reportResult(sa, millis(), true, r, p);  // update L4 priority
-    g_ranges++;
     if (sa == pollTarget) pollTarget = PS_NONE;    // in-flight done
 }
 void newDevice(DW1000Device* d)      { sched.addTag(d->getShortAddress()); }
@@ -130,7 +123,6 @@ void setup() {
 static void meshPump(uint32_t now) {
     MeshLink::Frame fr;
     for (int i = 0; i < 8 && mesh.poll(fr); i++) {
-        g_meshRx++;
         switch (meshMsgType(fr.data, fr.len)) {
         case MESH_VALUE: {
             ValueMsg m;
@@ -224,21 +216,4 @@ void loop() {
         }
     }
 
-    // status telemetry: nbr>0 means the mesh detected the other anchor; two anchors should
-    // converge to different slot values.
-    if ((uint32_t)(now - lastStatMs) >= STATUS_PERIOD_MS) {
-        lastStatMs = now;
-        Serial.print("# A");      Serial.print(ANCHOR_ID);
-        Serial.print(" slot=");   Serial.print(agent.slot());
-        Serial.print(" nbr=");    Serial.print(ig.neighborCount());
-        Serial.print("[");
-        for (uint8_t i = 0; i < ig.neighborCount(); i++) {
-            if (i) Serial.print(",");
-            Serial.print(ig.neighborIds()[i], HEX);
-        }
-        Serial.print("]");
-        Serial.print(" tags=");   Serial.print(sched.tagCount());
-        Serial.print(" rx=");     Serial.print(g_meshRx);
-        Serial.print(" ranges="); Serial.println(g_ranges);
-    }
 }

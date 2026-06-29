@@ -44,7 +44,6 @@ static const uint16_t SELF_SHORT = (ANCHOR_ID);
 static const WindowFrameConfig WF_CFG = {1 /*windows (dyn)*/, 1 /*slots (dyn)*/, 120 /*slotLen*/, 10 /*guard*/};
 static const uint32_t PUBLISH_MS       = 700;
 static const uint32_t RECOLOR_MS       = 700;
-static const uint32_t STATUS_MS        = 2000;
 static const uint32_t POLL_TIMEOUT_MS  = 100;
 #define MY_MEAS_MAX 16
 
@@ -65,8 +64,7 @@ static uint8_t  activeW = 0;   // number of active (localization) windows = wc.n
 static uint16_t pollTarget  = WC_NONE;
 static uint32_t pollStartMs = 0;
 static uint32_t lastPolledSlot = 0xFFFFFFFF;   // last slot instance we already polled in (one poll/slot)
-static uint32_t lastPublish = 0, lastRecolor = 0, lastStat = 0;
-static uint32_t g_ranges = 0;
+static uint32_t lastPublish = 0, lastRecolor = 0;
 
 static void rememberDiscovered(uint16_t tag) {
     for (uint8_t i = 0; i < discN; i++) if (disc[i] == tag) return;
@@ -82,8 +80,7 @@ void newRange() {
     char devId[8]; shortAddrToId(sa, devId, sizeof(devId));
     logRange(devId, r, p);                       // CSV: deviceId,range,rxp,ts
     reg.report(SELF_SHORT, sa, p, r, millis());  // my own link into the shared registry (timestamped)
-    g_ranges++;
-    if (sa == pollTarget) pollTarget = WC_NONE;
+    if (sa == pollTarget) pollTarget = WC_NONE;  // exchange completed
 }
 void newDevice(DW1000Device* d)      { rememberDiscovered(d->getShortAddress()); }
 void inactiveDevice(DW1000Device* d) { /* keep in registry; coloring/candidate handles it */ (void)d; }
@@ -209,25 +206,4 @@ void loop() {
         }
     }
 
-    if ((uint32_t)(now - lastStat) >= STATUS_MS) {
-        lastStat = now;
-        Serial.print("# A"); Serial.print(ANCHOR_ID);
-        Serial.print(" win="); Serial.print(wf.windowIndexNow(now));
-        Serial.print("/");     Serial.print(wf.numWindows());
-        Serial.print(" slots="); Serial.print(wf.slotsPerWindow());
-        Serial.print(" act="); Serial.print(activeW);
-        Serial.print(" probe="); Serial.print(probeN);
-        Serial.print(" disc="); Serial.print(discN);
-        Serial.print(" ranges="); Serial.print(g_ranges);
-        // schedule dump: tag -> window (or 'c' = candidate). Compare across anchors: should match.
-        Serial.print(" sched:");
-        uint16_t tl[TR_MAX_TAGS]; uint8_t nt = reg.tags(tl, TR_MAX_TAGS);
-        for (uint8_t i = 0; i < nt; i++) {
-            char id[8]; shortAddrToId(tl[i], id, sizeof(id));
-            uint8_t c = wc.colorOf(tl[i]);
-            Serial.print(' '); Serial.print(id); Serial.print('=');
-            if (c == WC_CANDIDATE) Serial.print('c'); else Serial.print(c);
-        }
-        Serial.println();
-    }
 }
