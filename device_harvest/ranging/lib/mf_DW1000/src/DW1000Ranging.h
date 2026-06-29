@@ -147,6 +147,11 @@ private:
 	static byte         _currentAddress[8];
 	static byte         _currentShortAddress[2];
 	static byte         _lastSentToShortAddress[2];
+	// Dedicated POLL_ACK target: the responder attributes the POLL_ACK's TX timestamp (timePollAckSent)
+	// to this, NOT to the shared _lastSentToShortAddress -- otherwise a transmitRangeReport/RangingInit
+	// firing between the POLL_ACK and its async _sentAck overwrites the shared addr and the timestamp
+	// lands on the wrong device (-> stale timePollAckSent -> garbage range). Multi-anchor responder fix.
+	static byte         _lastPollAckShortAddress[2];
 	static DW1000Mac    _globalMac;
 	static int32_t      timer;
 	static int16_t      counterForBlink;

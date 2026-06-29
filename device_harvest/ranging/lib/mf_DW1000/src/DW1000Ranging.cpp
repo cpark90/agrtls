@@ -38,6 +38,7 @@ DW1000Device DW1000RangingClass::_networkDevices[MAX_DEVICES];
 byte         DW1000RangingClass::_currentAddress[8];
 byte         DW1000RangingClass::_currentShortAddress[2];
 byte         DW1000RangingClass::_lastSentToShortAddress[2];
+byte         DW1000RangingClass::_lastPollAckShortAddress[2];
 volatile uint8_t DW1000RangingClass::_networkDevicesNumber = 0; // TODO short, 8bit?
 int16_t      DW1000RangingClass::_lastDistantDevice    = 0; // TODO short, 8bit?
 DW1000Mac    DW1000RangingClass::_globalMac;
@@ -406,8 +407,10 @@ void DW1000RangingClass::loop() {
 		//A msg was sent. We launch the ranging protocole when a message was sent
 		if(_type == ANCHOR) {
 			if(messageType == POLL_ACK) {
-				DW1000Device* myDistantDevice = searchDistantDevice(_lastSentToShortAddress);
-				
+				// attribute via the dedicated POLL_ACK target (not the shared _lastSentToShortAddress,
+				// which a transmitRangeReport/RangingInit in between could have overwritten)
+				DW1000Device* myDistantDevice = searchDistantDevice(_lastPollAckShortAddress);
+
 				if (myDistantDevice) {
 					DW1000.getTransmitTimestamp(myDistantDevice->timePollAckSent);
 				}
@@ -906,6 +909,8 @@ void DW1000RangingClass::transmitPollAck(DW1000Device* myDistantDevice) {
 	// delay the same amount as ranging tag
 	DW1000Time deltaTime = DW1000Time(_replyDelayTimeUS, DW1000Time::MICROSECONDS);
 	copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
+	// dedicated POLL_ACK target so the async timePollAckSent attribution can't be stolen by a later send
+	copyShortAddress(_lastPollAckShortAddress, myDistantDevice->getByteShortAddress());
 	transmit(data, deltaTime);
 }
 
