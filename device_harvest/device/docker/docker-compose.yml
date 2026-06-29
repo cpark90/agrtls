@@ -1,26 +1,27 @@
 services:
-  serial_sync:
+  harvest:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    image: serial_sync:dev
-    # Host networking keeps ROS_MASTER_URI trivial on a single machine.
-    network_mode: host
-    # Live-edit the workspace from the host; CSV output persists in ./data.
+    image: harvest:dev
+    network_mode: host   # keeps ROS_MASTER_URI trivial on a single machine
     volumes:
-      - ../catkin_ws:/catkin_ws
-      - ../data:/data
+      - ../catkin_ws:/catkin_ws   # live-edit; rebuild with catkin_make inside container
+      - ../data:/data             # CSV output persists across restarts
+    environment:
+      # Set to 0 to skip the automatic catkin_make on first startup.
+      AUTO_BUILD: "1"
     # --- Serial device passthrough -------------------------------------------
-    # Replace with the real stable paths from `ls -l /dev/serial/by-id/`.
+    # Replace with real stable paths from `ls -l /dev/serial/by-id/`.
     # devices:
-    #   - "/dev/serial/by-id/usb-FTDI_DEVICE_A-if00-port0:/dev/ttyUSB0"
-    #   - "/dev/serial/by-id/usb-FTDI_DEVICE_B-if00-port0:/dev/ttyUSB1"
-    # group_add lets the container user open the ports (dialout owns ttyUSB*).
+    #   - "/dev/serial/by-id/usb-<UWB_DEVICE>-if00-port0:/dev/ttyUSB_UWB"
+    #   - "/dev/serial/by-id/usb-<SCALE_DEVICE>-if00-port0:/dev/ttyUSB_SCALE"
     group_add:
-      - dialout
+      - dialout   # allows the container user to open ttyUSB* ports
     # -------------------------------------------------------------------------
     stdin_open: true
     tty: true
-    # Default: drop into a shell. Swap for the launch line once parsing works.
+    # Default: interactive shell after (auto-)build.
+    # Switch to the launch line once device paths and params are configured:
+    # command: roslaunch harvest_recorder bringup.launch
     command: bash
-    # command: roslaunch serial_sync bringup.launch
