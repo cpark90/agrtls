@@ -173,6 +173,16 @@ void loop() {
         Serial.print(" win="); Serial.print(wf.windowIndexNow(now));
         Serial.print("/");     Serial.print(wc.numWindows());
         Serial.print(" disc="); Serial.print(discN);
-        Serial.print(" ranges="); Serial.println(g_ranges);
+        Serial.print(" ranges="); Serial.print(g_ranges);
+        // schedule dump: tag -> window (or 'c' = candidate). Compare across anchors: should match.
+        Serial.print(" sched:");
+        uint16_t tl[TR_MAX_TAGS]; uint8_t nt = reg.tags(tl, TR_MAX_TAGS);
+        for (uint8_t i = 0; i < nt; i++) {
+            char id[8]; shortAddrToId(tl[i], id, sizeof(id));
+            uint8_t c = wc.colorOf(tl[i]);
+            Serial.print(' '); Serial.print(id); Serial.print('=');
+            if (c == WC_CANDIDATE) Serial.print('c'); else Serial.print(c);
+        }
+        Serial.println();
     }
 }
