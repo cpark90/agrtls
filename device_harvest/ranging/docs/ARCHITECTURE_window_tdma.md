@@ -134,6 +134,8 @@ There is **no tag mesh** (tags can't reliably talk — R7). All coordination is 
 
 windowLen, anchor-slot length, superframe/schedule length `L`, link-quality `linkQuality` (RXP/range→quality), anchor-selection threshold `θ_link`, candidate probe rate `K_probe`, registry update/rate-limit period, epoch-sync period.
 
+구현된 튜너블(§11.5): `slotLen`/guard(`WindowFrameConfig`), `MAX_SLOTS_PER_WINDOW`(슬롯 상한), `WC_MAX_WINDOWS`(active 윈도우 상한), `TR_ENTRY_TTL_MS`(엔트리 aging), 응답기 `INACTIVITY_TIME`(≥ superframe), `TQ_LINK_THRESH`/`TQ_HYSTERESIS`/`TQ_EMA_ALPHA`(링크 품질). `numWindows`·`slotsPerWindow`는 공유 레지스트리에서 동적 산출.
+
 ## 11. Responder layer & W-4 hardware validation (구현/검증 완료)
 
 §1~9는 스케줄러(앵커) 계층의 설계다. 실제 HW 검증(W-4)에서 **응답기(물리 태그) 계층**이 stock
@@ -159,9 +161,8 @@ mf-DW1000 데모의 단일-피어 수동 설계라 영구배제 방지 불변식
 - **probe/부트스트랩 대상** = "SELF가 아직 effective가 **아닌** 발견 태그"(bootstrap=미측정,
   global candidate, 약링크 재탐색 모두 포함). 이게 없으면 한 번도 측정 안 한 active 태그를 영영
   못 잰다(effective여야 active 윈도우에서 폴 → 데드락).
-- **슬롯당 1폴**: greedy 다중 폴 제거 → 교환이 슬롯 경계를 넘지 않음. `slotsPerWindow`는 작게
-  유지(superframe < 응답기 inactivity timeout). 5~10 앵커 확장 시 anchor-slot coloring + inactivity
-  timeout 재조정 필요(향후).
+- **슬롯당 1폴**: greedy 다중 폴 제거 → 교환이 슬롯 경계를 넘지 않음. (anchor-slot 배정과
+  `slotsPerWindow` 동적화는 §11.5 참조.)
 - **타임아웃 시 가짜 -120 보고 금지**: 일시적 타임아웃 한 번이 좋은 링크를 candidate로 뒤집어
   coloring/epoch을 흔들던 문제 제거.
 
@@ -182,3 +183,42 @@ mf-DW1000 데모의 단일-피어 수동 설계라 영구배제 방지 불변식
 ### 11.4 개발 보조
 - `.claude/skills/uwb-bench` — 노드 빌드/업로드(`flash.sh`), 비-TTY 시리얼 캡처(`serial_capture.py`),
   디바이스별 range 집계(`tally.py`). `pio device monitor`가 비대화형에서 TTY를 요구해 실패하므로 사용.
+
+### 11.5 anchor-slot coloring · 동적 슬롯 · aging · cross-anchor 일관성 (구현/검증 완료)
+
+5~10 앵커 확장을 위한 한 윈도우 내 앵커 슬롯 배정과, 그것이 앵커 간 깨지지 않게 하는 일관성 보강.
+
+- **결정적 anchor-slot coloring**: 한 윈도우 안에서 앵커의 슬롯 = 그 윈도우 태그의 **effective
+  앵커들 중 자기 rank**(`TagRegistry::anchorRank`, id 오름차순). 같은 태그를 재는 앵커들은 서로 다른
+  슬롯을 받아 충돌-프리. **윈도우 coloring과 동일하게 공유 레지스트리에서 결정적**으로 계산하므로
+  MGM 협의가 불필요하다(MGM은 공유-레지스트리 가정을 버릴 때만 필요 — 현 설계에선 불필요).
+- **동적 `slotsPerWindow`** = 임의 태그의 최대 effective 앵커 수(`maxEffectiveAnchorCount`,
+  `WindowFrame::setSlotsPerWindow`, `MAX_SLOTS_PER_WINDOW`로 상한). 정확히 필요한 만큼만 → 슬롯 낭비 없음.
+- **inactivity timeout**: superframe = `numWindows*slotsPerWindow*slotLen`가 앵커 증가로 1s를 넘을
+  수 있어 응답기 `INACTIVITY_TIME`을 1000→6000ms로 상향(admit-on-POLL이 backstop). superframe이
+  이 값에 근접하면 더 올릴 것.
+- **registry 엔트리 aging**: 링크별 `lastMs` + `TagRegistry::expire(now, TR_ENTRY_TTL_MS=5000)`.
+  사라진 (anchor,tag) 링크가 stale 엔트리로 남아 없는 태그를 계속 스케줄하거나 슬롯 수를 부풀리는
+  것을 방지. (`nowMs==0` 보고는 만료 대상 아님 — 호스트 테스트용.)
+- **owner-authoritative eligibility (일관성 핵심)**: eligibility를 **링크 소유 앵커가 자기 평활
+  이력으로 한 번 결정**해 TAGINFO의 `eligible` 비트로 발행하고, 수신 앵커는 **그대로 채택**
+  (`reportPeer`)한다. 각 앵커가 독립적으로 EMA/히스테리시스를 재계산하면 marginal 링크가 한쪽은
+  eligible·다른 쪽은 아니어서 slots/coloring이 갈라지고 epoch이 어긋난다 — 이를 제거. 앵커는 자기
+  링크(평활 RXP + 결정)를 `selfLinks`로 추출해 발행한다.
+- **검증(앵커 2 + 태그 2)**: 두 앵커의 `slots`·`sched`가 일치(이전엔 slots 1 vs 2로 갈림).
+  anchorRank/aging/maxEffectiveAnchorCount는 호스트 테스트로 검증.
+
+### 11.6 물리 링크 한계 (펌웨어 밖 — 배치/캘리브레이션)
+
+스케줄러·응답기 로직이 옳아도, **약한 링크는 discovery(BLINK↔RANGING_INIT 왕복)부터 실패**할 수
+있다(예: A1↔T0가 멀어 A1이 T0를 아예 발견 못 함). 이는 펌웨어 버그가 아니라 물리 한계이며 다음으로
+대응한다:
+
+- **앵커 배치/높이**: 태그가 항상 ≥3개 앵커의 LOS 안에 들도록(localization엔 ≥3 필요). 멀티패스가
+  큰 위치는 피한다.
+- **안테나 딜레이 캘리브레이션**(CLAUDE.md 1차 의심 대상): 기본값(16384/16385) 사용 금지, 모듈별로
+  캘리브레이션. 미캘리브레이션 시 거리·RXP가 틀어져 `θ_link` 부근에서 잘못 marginal 판정될 수 있다.
+- **TX power / RF 모드**: 근거리 새추레이션(−40dBm 이상)은 TX 하향, 원거리 약신호는 ACCURACY 모드
+  (110k/긴 프리앰블)로 감도 확보.
+- 시스템은 닿지 않는 앵커-태그 쌍을 candidate+probe로 graceful degrade하므로, 물리 개선 전까지도
+  닿는 앵커만으로 동작은 유지된다(단 그 태그의 클러스터 크기가 작아져 위치 정확도는 떨어진다).
