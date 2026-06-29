@@ -168,10 +168,16 @@ mf-DW1000 데모의 단일-피어 수동 설계라 영구배제 방지 불변식
 ### 11.3 검증 결과 (앵커 2 + 태그 2)
 - ✓ **클러스터링**: 두 앵커가 같은 태그(T0)를 모두 측정. 영구배제 없음(약한 T1도 probe로 측정).
 - ✓ device table churn 최소화, per-device 상태로 동시 교환 안정.
-- ⚠ **남은 1건 — link-quality flap**: 임계값 근처(RXP mean ≈ −85, 편차 −67~−102 멀티패스) 링크에서
-  first-cut `linkQuality`(raw RXP)가 샘플마다 eligibility를 뒤집어 coloring이 active↔candidate로
-  진동 → superframe 길이가 흔들려 epoch 동기 불안정. **대응: `tag_quality.h`의 pluggable
-  `linkQuality`에 EMA/히스테리시스 추가**(§4.3의 "단순하되 개선 가능" 지점).
+- ✓ **link-quality 안정화(완료)**: 임계값 근처(RXP mean ≈ −85, 편차 −67~−102 멀티패스) 링크가
+  샘플마다 eligibility를 뒤집어 coloring이 active↔candidate로 진동 → superframe 길이가 흔들려
+  epoch 동기가 불안정하던 문제를 `tag_quality.h`에 **EMA 평활 + 히스테리시스**를 넣어 해결.
+  레지스트리가 링크별 평활 RXP와 히스테리시스 eligibility 상태를 보관 → 단일 노이즈 샘플이 스케줄을
+  못 흔든다. 결과: coloring 안정·앵커 간 합의·epoch 동기 안정. 멀티패스로 marginal한 링크는
+  candidate로 안정 수렴(클러스터링에서 제외하되 probe로 계속 측정 — localization 품질상 타당).
+  파라미터: `TQ_LINK_THRESH`(−85), `TQ_HYSTERESIS`(±3dB), `TQ_EMA_ALPHA`(0.3) — pluggable.
+
+> 참고: 한 앵커가 marginal 태그를 **discovery조차 못 하는** 경우(약한 BLINK/RANGING_INIT 왕복)는
+> 물리 링크 한계다. 해당 태그는 닿는 앵커만 측정하며 candidate+probe로 graceful degrade한다.
 
 ### 11.4 개발 보조
 - `.claude/skills/uwb-bench` — 노드 빌드/업로드(`flash.sh`), 비-TTY 시리얼 캡처(`serial_capture.py`),

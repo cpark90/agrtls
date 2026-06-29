@@ -31,14 +31,22 @@ class TagRegistry {
 public:
     void begin() { _n = 0; }
 
-    // Add or update the measurement for an (anchor, tag) link.
+    // Add or update the measurement for an (anchor, tag) link. The stored rxp is EMA-smoothed and the
+    // eligibility is hysteretic (tag_quality.h) so a single noisy/marginal sample does not flip the
+    // schedule (which would desync the window epoch across anchors).
     void report(uint16_t anchorId, uint16_t tagId, float rxp, float range) {
         for (uint8_t i = 0; i < _n; i++) {
             if (_e[i].anchor == anchorId && _e[i].tag == tagId) {
-                _e[i].rxp = rxp; _e[i].range = range; return;
+                _e[i].rxp   = qualityEma(_e[i].rxp, rxp);   // first-cut: quality == rxp -> smooth rxp
+                _e[i].range = range;
+                _e[i].eligible = linkEligibleHyst(linkQuality(_e[i].rxp, _e[i].range), _e[i].eligible);
+                return;
             }
         }
-        if (_n < TR_MAX_ENTRIES) _e[_n++] = Entry{anchorId, tagId, rxp, range};
+        if (_n < TR_MAX_ENTRIES) {
+            bool elig = linkEligibleHyst(linkQuality(rxp, range), false);   // join only if clearly good
+            _e[_n++] = Entry{anchorId, tagId, rxp, range, elig};
+        }
     }
 
     // Distinct tag ids seen.
@@ -57,14 +65,14 @@ public:
     uint8_t effectiveAnchors(uint16_t tagId, uint16_t* out, uint8_t maxN) const {
         uint8_t c = 0;
         for (uint8_t i = 0; i < _n && c < maxN; i++)
-            if (_e[i].tag == tagId && linkEligible(_e[i].rxp, _e[i].range)) out[c++] = _e[i].anchor;
+            if (_e[i].tag == tagId && _e[i].eligible) out[c++] = _e[i].anchor;
         return c;
     }
 
     uint8_t effectiveAnchorCount(uint16_t tagId) const {
         uint8_t c = 0;
         for (uint8_t i = 0; i < _n; i++)
-            if (_e[i].tag == tagId && linkEligible(_e[i].rxp, _e[i].range)) c++;
+            if (_e[i].tag == tagId && _e[i].eligible) c++;
         return c;
     }
 
@@ -73,17 +81,17 @@ public:
     bool isEffectiveAnchor(uint16_t tagId, uint16_t anchorId) const {
         for (uint8_t i = 0; i < _n; i++)
             if (_e[i].tag == tagId && _e[i].anchor == anchorId)
-                return linkEligible(_e[i].rxp, _e[i].range);
+                return _e[i].eligible;
         return false;
     }
 
     // Two tags conflict iff some anchor ranges both effectively.
     bool conflict(uint16_t t1, uint16_t t2) const {
         for (uint8_t i = 0; i < _n; i++) {
-            if (_e[i].tag != t1 || !linkEligible(_e[i].rxp, _e[i].range)) continue;
+            if (_e[i].tag != t1 || !_e[i].eligible) continue;
             for (uint8_t j = 0; j < _n; j++)
                 if (_e[j].tag == t2 && _e[j].anchor == _e[i].anchor &&
-                    linkEligible(_e[j].rxp, _e[j].range)) return true;
+                    _e[j].eligible) return true;
         }
         return false;
     }
@@ -93,7 +101,7 @@ public:
     float meanQuality(uint16_t tagId) const {
         float sum = 0; uint8_t c = 0;
         for (uint8_t i = 0; i < _n; i++)
-            if (_e[i].tag == tagId && linkEligible(_e[i].rxp, _e[i].range)) {
+            if (_e[i].tag == tagId && _e[i].eligible) {
                 sum += linkQuality(_e[i].rxp, _e[i].range); c++;
             }
         return c ? sum / c : -1e9f;
@@ -104,18 +112,18 @@ public:
     float meanSharedQuality(uint16_t tag, uint16_t other) const {
         float sum = 0; uint8_t c = 0;
         for (uint8_t i = 0; i < _n; i++) {
-            if (_e[i].tag != tag || !linkEligible(_e[i].rxp, _e[i].range)) continue;
+            if (_e[i].tag != tag || !_e[i].eligible) continue;
             bool shared = false;
             for (uint8_t j = 0; j < _n; j++)
                 if (_e[j].tag == other && _e[j].anchor == _e[i].anchor &&
-                    linkEligible(_e[j].rxp, _e[j].range)) { shared = true; break; }
+                    _e[j].eligible) { shared = true; break; }
             if (shared) { sum += linkQuality(_e[i].rxp, _e[i].range); c++; }
         }
         return c ? sum / c : -1e9f;
     }
 
 private:
-    struct Entry { uint16_t anchor; uint16_t tag; float rxp; float range; };
+    struct Entry { uint16_t anchor; uint16_t tag; float rxp; float range; bool eligible; };
     Entry   _e[TR_MAX_ENTRIES];
     uint8_t _n = 0;
 };
