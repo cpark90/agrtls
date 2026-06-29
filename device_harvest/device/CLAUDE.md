@@ -124,4 +124,10 @@ rostopic hz /synced/reading
 - 코드 수정보다 `params.yaml` 편집을 우선한다.
 - C++14, 컴파일러 경고 없이 유지; 노드는 작고 단일 목적으로.
 - 메시지 필드 추가 시 해당 필드를 사용하는 모든 패키지를 함께 수정한다.
+- **패키지에 새로운 외부 의존성이 추가되면 반드시 Docker 관련 파일을 함께 업데이트한다.**
+  - `docker/Dockerfile` — `apt-get install`에 해당 시스템 패키지 추가
+  - `docker/docker-compose.yml` — 필요 시 서비스 설정 변경
+  - `package.xml` — `<build_depend>`, `<exec_depend>` 선언
+  - `CMakeLists.txt` — `find_package()`, `include_directories()` 반영
+  - 의존성 추가 체크리스트: ROS 패키지(`ros-noetic-*`) vs 시스템 패키지(`lib*-dev`) 구분 후 Dockerfile에 적절한 형태로 추가.
 - .md 파일 작성에만 한글을 사용하고 주석을 포함한 이외에는 영어로 작성.
