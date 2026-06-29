@@ -55,6 +55,7 @@ catkin_ws/src/
     src/scale_reader_node.cpp       # 시리얼 읽기 → parseFrame (STUB) → publish
     config/params.yaml
     launch/scale_reader.launch
+    DESIGN.md                       # 설계 상세 문서
   harvest_recorder/
     package.xml / CMakeLists.txt
     msg/HarvestReading.msg          # Header + UwbPosition + WeightReading
@@ -63,6 +64,7 @@ catkin_ws/src/
     config/params.yaml
     launch/bringup.launch           # 세 노드 전체 실행
     launch/recorder.launch          # recorder만 실행
+    DESIGN.md                       # 설계 상세 문서
 data/                               # CSV 출력 (git 제외)
 ```
 
