@@ -35,8 +35,8 @@ enum : uint8_t {
 #ifndef MESH_MAX_TAGINFO
 #define MESH_MAX_TAGINFO 16        // tag measurements per TAGINFO frame
 #endif
-// Largest message = TAGINFO: type(1) + anchorId(2) + count(1) + 6 bytes/entry.
-#define MESH_MAX_FRAME (4 + 6 * MESH_MAX_TAGINFO)
+// Largest message = TAGINFO: type(1) + anchorId(2) + count(1) + 7 bytes/entry.
+#define MESH_MAX_FRAME (4 + 7 * MESH_MAX_TAGINFO)
 
 // --- little-endian cursor helpers ---
 namespace mesh_detail {
@@ -131,7 +131,10 @@ inline bool unpackIdList(const uint8_t* buf, uint8_t len,
 }
 
 // --- TAGINFO (registry share): an anchor's per-tag measurements ---
-struct TagInfoEntry { uint16_t tagId; float rxp_dBm; float range_m; };
+// `eligible` is the OWNER anchor's authoritative link-eligibility decision (computed once, from its
+// own smoothed history). Receivers adopt it verbatim instead of recomputing, so every anchor agrees
+// on each link's eligibility -> the coloring / slot counts stay consistent across anchors.
+struct TagInfoEntry { uint16_t tagId; float rxp_dBm; float range_m; bool eligible; };
 
 namespace mesh_detail {
 inline int16_t  toCentiDbm(float dbm)  { return (int16_t)(dbm >= 0 ? dbm * 100 + 0.5f : dbm * 100 - 0.5f); }
@@ -148,6 +151,7 @@ inline uint8_t packTagInfo(uint16_t anchorId, const TagInfoEntry* e, uint8_t n, 
         mesh_detail::putU16(p, e[i].tagId);
         mesh_detail::putU16(p, (uint16_t)mesh_detail::toCentiDbm(e[i].rxp_dBm));
         mesh_detail::putU16(p, mesh_detail::toCm(e[i].range_m));
+        *p++ = e[i].eligible ? 1 : 0;                           // owner's eligibility decision
     }
     return (uint8_t)(p - buf);
 }
@@ -158,12 +162,13 @@ inline bool unpackTagInfo(const uint8_t* buf, uint8_t len,
     const uint8_t* p = buf + 1;
     anchorId = mesh_detail::getU16(p);
     uint8_t count = *p++;
-    if ((uint16_t)(4 + 6 * count) > len) return false;          // truncated
+    if ((uint16_t)(4 + 7 * count) > len) return false;          // truncated
     n = (count > maxN) ? maxN : count;
     for (uint8_t i = 0; i < n; i++) {
-        out[i].tagId   = mesh_detail::getU16(p);
-        out[i].rxp_dBm = (int16_t)mesh_detail::getU16(p) / 100.0f;
-        out[i].range_m = mesh_detail::getU16(p) / 100.0f;
+        out[i].tagId    = mesh_detail::getU16(p);
+        out[i].rxp_dBm  = (int16_t)mesh_detail::getU16(p) / 100.0f;
+        out[i].range_m  = mesh_detail::getU16(p) / 100.0f;
+        out[i].eligible = (*p++ != 0);
     }
     return true;
 }

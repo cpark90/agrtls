@@ -11,8 +11,10 @@
  *     window_color assigns to window k -> all anchors of that tag measure it in the same window
  *     => the tag's ranges are clustered (for localization).
  *
- * W-3 = wiring of the W-1/W-2 pure modules with this loop + a simple bootstrap. Timing/anchor-slot
- * are first-cut (anchor-slot = ANCHOR_ID); HW validation/tuning + fair anchor-slot coloring = W-4.
+ * Anchor-slot within a window = this anchor's RANK among the window-tag's effective anchors,
+ * computed from the shared registry (deterministic -> collision-free, no MGM negotiation needed).
+ * numWindows and slotsPerWindow are both sized dynamically from the registry each recolor; links
+ * that vanish age out (TagRegistry::expire) so a gone tag stops being scheduled.
  *
  * Pairs with tag_dw1000_responder. Build per node: -D ANCHOR_ID=n.
  */
@@ -34,14 +36,12 @@
 #endif
 static const uint16_t SELF_SHORT = (ANCHOR_ID);
 
-// First-cut timing (tune in W-4): window = slotsPerWindow*slotLen; superframe = numWindows*window.
-// numWindows is set dynamically each recolor (active windows + 1 trailing probe window); the 1 here
-// is just the initial/bootstrap value. slotsPerWindow caps anchors per window; keep it small so the
-// superframe stays well under the responder inactivity timeout (one poll/slot -> one poll/tag per
-// superframe must refresh the device). Proper anchor-slot coloring (more anchors) = later work.
-#define SLOTS_PER_WINDOW 2
-static const WindowFrameConfig WF_CFG = {1 /*windows (dynamic)*/, SLOTS_PER_WINDOW, 120 /*slotLen*/, 10 /*guard*/};
-static const uint8_t  MY_SLOT          = (ANCHOR_ID) % SLOTS_PER_WINDOW;   // anchor-slot within a window
+// Timing: window = slotsPerWindow*slotLen; superframe = numWindows*window. BOTH numWindows and
+// slotsPerWindow are sized dynamically each recolor from the shared registry (numWindows = active
+// windows + 1 probe; slotsPerWindow = max effective anchors over any tag), so the schedule fits
+// exactly with no wasted slots. The config values here are just the initial/bootstrap state.
+#define MAX_SLOTS_PER_WINDOW 12   // cap on anchor-slots/window (<= MAX_DEVICES; bounds superframe len)
+static const WindowFrameConfig WF_CFG = {1 /*windows (dyn)*/, 1 /*slots (dyn)*/, 120 /*slotLen*/, 10 /*guard*/};
 static const uint32_t PUBLISH_MS       = 700;
 static const uint32_t RECOLOR_MS       = 700;
 static const uint32_t STATUS_MS        = 2000;
@@ -53,9 +53,6 @@ WindowColor  wc;
 WindowFrame  wf;
 MeshLink     mesh;
 
-// my own measurements (for publishing TAGINFO)
-static TagInfoEntry myMeas[MY_MEAS_MAX];
-static uint8_t      myMeasN = 0;
 // discovered tags (for bootstrap / candidate probing of tags without a normal window)
 static uint16_t disc[MY_MEAS_MAX];
 static uint8_t  discN = 0;
@@ -71,11 +68,6 @@ static uint32_t lastPolledSlot = 0xFFFFFFFF;   // last slot instance we already 
 static uint32_t lastPublish = 0, lastRecolor = 0, lastStat = 0;
 static uint32_t g_ranges = 0;
 
-static void rememberMeasurement(uint16_t tag, float rxp, float range) {
-    for (uint8_t i = 0; i < myMeasN; i++)
-        if (myMeas[i].tagId == tag) { myMeas[i].rxp_dBm = rxp; myMeas[i].range_m = range; return; }
-    if (myMeasN < MY_MEAS_MAX) myMeas[myMeasN++] = TagInfoEntry{tag, rxp, range};
-}
 static void rememberDiscovered(uint16_t tag) {
     for (uint8_t i = 0; i < discN; i++) if (disc[i] == tag) return;
     if (discN < MY_MEAS_MAX) disc[discN++] = tag;
@@ -88,9 +80,8 @@ void newRange() {
     uint16_t sa = d->getShortAddress();
     float r = d->getRange(), p = d->getRXPower();
     char devId[8]; shortAddrToId(sa, devId, sizeof(devId));
-    logRange(devId, r, p);                 // CSV: deviceId,range,rxp,ts,nlos
-    reg.report(SELF_SHORT, sa, p, r);      // my own link into the shared registry
-    rememberMeasurement(sa, p, r);
+    logRange(devId, r, p);                       // CSV: deviceId,range,rxp,ts
+    reg.report(SELF_SHORT, sa, p, r, millis());  // my own link into the shared registry (timestamped)
     g_ranges++;
     if (sa == pollTarget) pollTarget = WC_NONE;
 }
@@ -105,7 +96,8 @@ static void meshPump(uint32_t now) {
         case MESH_TAGINFO: {
             uint16_t aid; TagInfoEntry e[MESH_MAX_TAGINFO]; uint8_t n;
             if (unpackTagInfo(fr.data, fr.len, aid, e, MESH_MAX_TAGINFO, n) && aid != SELF_SHORT)
-                for (uint8_t k = 0; k < n; k++) reg.report(aid, e[k].tagId, e[k].rxp_dBm, e[k].range_m);
+                for (uint8_t k = 0; k < n; k++)             // peer-owned: adopt its eligibility verbatim
+                    reg.reportPeer(aid, e[k].tagId, e[k].rxp_dBm, e[k].range_m, e[k].eligible, now);
             break;
         }
         case MESH_SYNC: {
@@ -120,9 +112,14 @@ static void meshPump(uint32_t now) {
 static void meshPublish(uint32_t now) {
     if ((uint32_t)(now - lastPublish) < PUBLISH_MS) return;
     lastPublish = now;
+    // publish my own links (smoothed rxp + MY eligibility decision) so peers adopt them verbatim
+    uint16_t t[MESH_MAX_TAGINFO]; float rx[MESH_MAX_TAGINFO], rg[MESH_MAX_TAGINFO]; bool el[MESH_MAX_TAGINFO];
+    uint8_t pn = reg.selfLinks(SELF_SHORT, t, rx, rg, el, MESH_MAX_TAGINFO);
+    TagInfoEntry pub[MESH_MAX_TAGINFO];
+    for (uint8_t i = 0; i < pn; i++) pub[i] = TagInfoEntry{t[i], rx[i], rg[i], el[i]};
     uint8_t b[MESH_MAX_FRAME];
-    mesh.send(b, packTagInfo(SELF_SHORT, myMeas, myMeasN, b));   // share my measurements
-    mesh.send(b, packSync(SELF_SHORT, wf.phaseMs(now), b));      // window-phase gossip
+    mesh.send(b, packTagInfo(SELF_SHORT, pub, pn, b));          // share my links
+    mesh.send(b, packSync(SELF_SHORT, wf.phaseMs(now), b));     // window-phase gossip
 }
 
 void setup() {
@@ -154,8 +151,15 @@ void loop() {
     meshPump(now);
     if ((uint32_t)(now - lastRecolor) >= RECOLOR_MS) {
         lastRecolor = now;
+        reg.expire(now);                           // drop links that vanished (stale entries)
         wc.build(reg, WC_MAX_WINDOWS);
         activeW = wc.numWindows();                 // shared across anchors (deterministic on registry)
+        // anchor-slots/window = max effective anchors over any tag (so every effective anchor of a
+        // window's tag gets a distinct rank-slot). Shared-deterministic -> stays equal across anchors.
+        uint8_t slots = reg.maxEffectiveAnchorCount();
+        if (slots < 1) slots = 1;
+        if (slots > MAX_SLOTS_PER_WINDOW) slots = MAX_SLOTS_PER_WINDOW;
+        wf.setSlotsPerWindow(slots);
         // probe set (local) = discovered tags THIS anchor is not yet effective for. Covers: bootstrap
         // (never ranged -> must measure once to learn its link), global candidates (far/weak tags), and
         // weak-link re-probe. Tags SELF is already effective for are ranged in their active window, so
@@ -178,17 +182,20 @@ void loop() {
         pollTarget = WC_NONE;
     }
 
-    // poll AT MOST ONCE per slot, in my anchor-slot of the current window, during work time.
-    // (one poll/slot: a greedy re-poll would spill the exchange past the slot edge and collide with
-    //  the next anchor's slot -> keep one clean exchange per slot.)
-    if (pollTarget == WC_NONE && wf.slotIndexNow(now) == MY_SLOT && wf.isWork(now)
-        && wf.slotNumber(now) != lastPolledSlot) {
-        uint8_t  k = wf.windowIndexNow(now);
-        uint16_t target = WC_NONE;
+    // poll AT MOST ONCE per slot, during work time. Which slot is mine depends on the window:
+    //  - active window k: I range the window's tag iff I'm one of its effective anchors, in the slot
+    //    = my rank among them (collision-free, every anchor of the tag gets a distinct slot).
+    //  - probe window: best-effort, id-based slot (clustering not required for probes).
+    // (one poll/slot: a greedy re-poll would spill the exchange past the slot edge into the next slot.)
+    if (pollTarget == WC_NONE && wf.isWork(now) && wf.slotNumber(now) != lastPolledSlot) {
+        uint8_t  k       = wf.windowIndexNow(now);
+        uint8_t  curSlot = wf.slotIndexNow(now);
+        uint16_t target  = WC_NONE;
         if (k < activeW) {
-            target = wc.tagForWindow(reg, SELF_SHORT, k);     // localization window: the colored tag
-        } else if (probeN > 0) {                              // trailing probe window: re-admit/bootstrap
-            target = probeList[probeIdx % probeN];
+            uint16_t t = wc.tagForWindow(reg, SELF_SHORT, k);          // the tag I effectively range
+            if (t != WC_NONE && reg.anchorRank(t, SELF_SHORT) == curSlot) target = t;
+        } else if (probeN > 0 && (uint8_t)((ANCHOR_ID) % wf.slotsPerWindow()) == curSlot) {
+            target = probeList[probeIdx % probeN];                     // trailing probe: re-admit/bootstrap
             probeIdx++;
         }
         if (target != WC_NONE) {
@@ -207,6 +214,7 @@ void loop() {
         Serial.print("# A"); Serial.print(ANCHOR_ID);
         Serial.print(" win="); Serial.print(wf.windowIndexNow(now));
         Serial.print("/");     Serial.print(wf.numWindows());
+        Serial.print(" slots="); Serial.print(wf.slotsPerWindow());
         Serial.print(" act="); Serial.print(activeW);
         Serial.print(" probe="); Serial.print(probeN);
         Serial.print(" disc="); Serial.print(discN);

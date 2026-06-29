@@ -35,6 +35,12 @@ public:
     void setNumWindows(uint8_t n) { _cfg.numWindows = (n == 0) ? 1 : n; }
     uint8_t numWindows() const { return _cfg.numWindows; }
 
+    // Anchor-slots per window. Driven dynamically from the shared registry (= max effective anchors
+    // over any tag) so a window has exactly enough slots for its tag's anchors, no more. Must stay
+    // identical across anchors (derive from shared state only) or the epoch/slots desync.
+    void setSlotsPerWindow(uint8_t n) { _cfg.slotsPerWindow = (n == 0) ? 1 : n; }
+    uint8_t slotsPerWindow() const { return _cfg.slotsPerWindow; }
+
     uint32_t windowLenMs()    const { return (uint32_t)_cfg.slotsPerWindow * _cfg.slotLenMs; }
     uint32_t superframeLenMs() const { return (uint32_t)_cfg.numWindows * windowLenMs(); }
 

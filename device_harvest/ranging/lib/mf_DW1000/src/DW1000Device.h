@@ -22,7 +22,10 @@
  */
 
 
-#define INACTIVITY_TIME 1000
+// A responder hears each anchor once per superframe; with dynamic slots/windows (more anchors) the
+// superframe can exceed 1 s, so keep a device alive longer. admit-on-POLL re-admits anyway, this just
+// avoids churn. Raise further if the superframe (numWindows*slotsPerWindow*slotLen) approaches this.
+#define INACTIVITY_TIME 6000
 
 #ifndef _DW1000Device_H_INCLUDED
 #define _DW1000Device_H_INCLUDED

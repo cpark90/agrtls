@@ -108,7 +108,8 @@ static void test_frame() {
 
 // W-2: TAGINFO message (registry share over the mesh)
 static void test_taginfo() {
-    TagInfoEntry in[3] = {{0, -70.5f, 1.23f}, {1, -82.0f, 4.56f}, {2, -90.25f, 0.0f}};
+    // eligible is the owner's authoritative decision (carried on the wire)
+    TagInfoEntry in[3] = {{0, -70.5f, 1.23f, true}, {1, -82.0f, 4.56f, true}, {2, -90.25f, 0.0f, false}};
     uint8_t buf[MESH_MAX_FRAME];
     uint8_t len = packTagInfo(7, in, 3, buf);
     CHECK(meshMsgType(buf, len) == MESH_TAGINFO);
@@ -116,20 +117,50 @@ static void test_taginfo() {
     uint16_t aid; TagInfoEntry out[8]; uint8_t n;
     CHECK(unpackTagInfo(buf, len, aid, out, 8, n));
     CHECK(aid == 7 && n == 3);
-    CHECK(out[0].tagId == 0 && approx(out[0].rxp_dBm, -70.5f) && approx(out[0].range_m, 1.23f));
-    CHECK(out[1].tagId == 1 && approx(out[1].rxp_dBm, -82.0f) && approx(out[1].range_m, 4.56f));
-    CHECK(out[2].tagId == 2 && approx(out[2].rxp_dBm, -90.25f));
+    CHECK(out[0].tagId == 0 && approx(out[0].rxp_dBm, -70.5f) && approx(out[0].range_m, 1.23f) && out[0].eligible);
+    CHECK(out[1].tagId == 1 && approx(out[1].rxp_dBm, -82.0f) && approx(out[1].range_m, 4.56f) && out[1].eligible);
+    CHECK(out[2].tagId == 2 && approx(out[2].rxp_dBm, -90.25f) && !out[2].eligible);
 
-    // apply a received TAGINFO into a registry (what an anchor does on receive)
+    // apply a received TAGINFO into a registry as a PEER (eligibility adopted verbatim)
     TagRegistry r; r.begin();
-    for (uint8_t i = 0; i < n; i++) r.report(aid, out[i].tagId, out[i].rxp_dBm, out[i].range_m);
-    CHECK(r.effectiveAnchorCount(0) == 1);   // -70.5 eligible
-    CHECK(r.effectiveAnchorCount(1) == 1);   // -82 eligible
-    CHECK(r.effectiveAnchorCount(2) == 0);   // -90.25 < theta_link(-85) -> not eligible
+    for (uint8_t i = 0; i < n; i++) r.reportPeer(aid, out[i].tagId, out[i].rxp_dBm, out[i].range_m, out[i].eligible);
+    CHECK(r.effectiveAnchorCount(0) == 1);   // owner said eligible
+    CHECK(r.effectiveAnchorCount(1) == 1);   // owner said eligible
+    CHECK(r.effectiveAnchorCount(2) == 0);   // owner said NOT eligible
 
     CHECK(!unpackTagInfo(buf, 3, aid, out, 8, n));   // truncated
     uint8_t v[MESH_MAX_FRAME]; ValueMsg vm{1,2,3,4}; packValue(vm, v);
     CHECK(!unpackTagInfo(v, 10, aid, out, 8, n));     // wrong type
+}
+
+// aging + anchor-slot rank + dynamic slot count
+static void test_aging_slots() {
+    TagRegistry r; r.begin();
+    // T0 effective anchors A0,A1,A2 (by id); A3 weak -> not effective
+    r.report(0, 0, -70, 1, 1000); r.report(1, 0, -72, 1, 1000); r.report(2, 0, -75, 1, 1000);
+    r.report(3, 0, -90, 1, 1000);
+    // anchor-slot = rank among effective anchors (id order); weak anchor -> 0xFF
+    CHECK(r.anchorRank(0, 0) == 0);
+    CHECK(r.anchorRank(0, 1) == 1);
+    CHECK(r.anchorRank(0, 2) == 2);
+    CHECK(r.anchorRank(0, 3) == 0xFF);
+    CHECK(r.maxEffectiveAnchorCount() == 3);
+
+    // add T1 with 2 effective anchors -> max stays 3
+    r.report(4, 1, -70, 1, 1000); r.report(5, 1, -71, 1, 1000);
+    CHECK(r.maxEffectiveAnchorCount() == 3);
+
+    // aging: not stale within TTL, dropped past it
+    r.expire(2000, 5000);                 // 1000ms old -> keep
+    CHECK(r.effectiveAnchorCount(0) == 3);
+    r.expire(7000, 5000);                 // 6000ms old -> all expire
+    CHECK(r.effectiveAnchorCount(0) == 0 && r.maxEffectiveAnchorCount() == 0);
+
+    // nowMs==0 entries (default, e.g. non-aging tests) are never expired
+    TagRegistry r2; r2.begin();
+    r2.report(0, 0, -70, 1);              // no timestamp
+    r2.expire(1000000, 5000);
+    CHECK(r2.effectiveAnchorCount(0) == 1);
 }
 
 int main() {
@@ -139,6 +170,7 @@ int main() {
     test_color_cap();
     test_frame();
     test_taginfo();
+    test_aging_slots();
     if (g_fail == 0) printf("ALL WINDOW TESTS PASSED\n");
     else             printf("%d CHECK(S) FAILED\n", g_fail);
     return g_fail ? 1 : 0;

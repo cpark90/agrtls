@@ -25,6 +25,9 @@
 #ifndef TR_MAX_TAGS
 #define TR_MAX_TAGS 24
 #endif
+#ifndef TR_ENTRY_TTL_MS
+#define TR_ENTRY_TTL_MS 5000   // drop a link not refreshed within this (vanished link -> stale entry)
+#endif
 
 class TagRegistry {
 public:
@@ -32,20 +35,58 @@ public:
 
     // Add or update the measurement for an (anchor, tag) link. The stored rxp is EMA-smoothed and the
     // eligibility is hysteretic (tag_quality.h) so a single noisy/marginal sample does not flip the
-    // schedule (which would desync the window epoch across anchors).
-    void report(uint16_t anchorId, uint16_t tagId, float rxp, float range) {
+    // schedule (which would desync the window epoch across anchors). nowMs timestamps the link for
+    // aging via expire().
+    void report(uint16_t anchorId, uint16_t tagId, float rxp, float range, uint32_t nowMs = 0) {
         for (uint8_t i = 0; i < _n; i++) {
             if (_e[i].anchor == anchorId && _e[i].tag == tagId) {
                 _e[i].rxp   = qualityEma(_e[i].rxp, rxp);   // first-cut: quality == rxp -> smooth rxp
                 _e[i].range = range;
                 _e[i].eligible = linkEligibleHyst(linkQuality(_e[i].rxp, _e[i].range), _e[i].eligible);
+                _e[i].lastMs = nowMs;
                 return;
             }
         }
         if (_n < TR_MAX_ENTRIES) {
             bool elig = linkEligibleHyst(linkQuality(rxp, range), false);   // join only if clearly good
-            _e[_n++] = Entry{anchorId, tagId, rxp, range, elig};
+            _e[_n++] = Entry{anchorId, tagId, rxp, range, elig, nowMs};
         }
+    }
+
+    // Apply a PEER anchor's published link. The peer's eligibility is authoritative (it owns the link
+    // and decided it from its own smoothed history) -> store verbatim, do NOT recompute locally. This
+    // is what keeps every anchor's view of each link identical (consistent coloring / slot counts).
+    // Use report() (above) only for THIS anchor's own measurements.
+    void reportPeer(uint16_t anchorId, uint16_t tagId, float rxp, float range, bool eligible, uint32_t nowMs = 0) {
+        for (uint8_t i = 0; i < _n; i++)
+            if (_e[i].anchor == anchorId && _e[i].tag == tagId) {
+                _e[i].rxp = rxp; _e[i].range = range; _e[i].eligible = eligible; _e[i].lastMs = nowMs;
+                return;
+            }
+        if (_n < TR_MAX_ENTRIES) _e[_n++] = Entry{anchorId, tagId, rxp, range, eligible, nowMs};
+    }
+
+    // Extract THIS anchor's own links (smoothed rxp + its eligibility decision) for publishing over the
+    // mesh. Parallel arrays keep this module free of the wire/message type. Returns the count.
+    uint8_t selfLinks(uint16_t anchorId, uint16_t* tag, float* rxp, float* range, bool* elig, uint8_t maxN) const {
+        uint8_t c = 0;
+        for (uint8_t i = 0; i < _n && c < maxN; i++)
+            if (_e[i].anchor == anchorId) {
+                tag[c] = _e[i].tag; rxp[c] = _e[i].rxp; range[c] = _e[i].range; elig[c] = _e[i].eligible; c++;
+            }
+        return c;
+    }
+
+    // Drop links not refreshed within ttlMs (a vanished anchor-tag link must not linger as a stale
+    // entry that keeps a gone tag "active" / inflates slot counts). Entries reported with nowMs==0
+    // (the default, e.g. host tests not exercising aging) are never expired.
+    void expire(uint32_t nowMs, uint32_t ttlMs = TR_ENTRY_TTL_MS) {
+        uint8_t w = 0;
+        for (uint8_t i = 0; i < _n; i++) {
+            bool stale = _e[i].lastMs != 0 && (uint32_t)(nowMs - _e[i].lastMs) > ttlMs;
+            if (!stale) { if (w != i) _e[w] = _e[i]; w++; }
+        }
+        _n = w;
     }
 
     // Distinct tag ids seen.
@@ -82,6 +123,34 @@ public:
             if (_e[i].tag == tagId && _e[i].anchor == anchorId)
                 return _e[i].eligible;
         return false;
+    }
+
+    // Anchor-slot coloring (deterministic, same on every anchor from the shared registry): the slot
+    // an anchor takes within tagId's window = its RANK among tagId's effective anchors ordered by id.
+    // Two anchors ranging the same tag thus get distinct slots (collision-free) with no negotiation.
+    // Returns 0xFF if anchorId is not an effective anchor of tagId.
+    uint8_t anchorRank(uint16_t tagId, uint16_t anchorId) const {
+        if (!isEffectiveAnchor(tagId, anchorId)) return 0xFF;
+        uint8_t rank = 0;
+        for (uint8_t i = 0; i < _n; i++)
+            if (_e[i].tag == tagId && _e[i].eligible && _e[i].anchor < anchorId) rank++;
+        return rank;
+    }
+
+    // Max effective anchors over any single tag -> the number of anchor-slots a window needs so all
+    // effective anchors of its tag fit (drives the dynamic slotsPerWindow). >=0.
+    uint8_t maxEffectiveAnchorCount() const {
+        uint16_t seen[TR_MAX_TAGS]; uint8_t ns = 0, mx = 0;
+        for (uint8_t i = 0; i < _n; i++) {
+            uint16_t t = _e[i].tag;
+            bool done = false;
+            for (uint8_t j = 0; j < ns; j++) if (seen[j] == t) { done = true; break; }
+            if (done) continue;
+            if (ns < TR_MAX_TAGS) seen[ns++] = t;
+            uint8_t c = effectiveAnchorCount(t);
+            if (c > mx) mx = c;
+        }
+        return mx;
     }
 
     // Two tags conflict iff some anchor ranges both effectively.
@@ -122,7 +191,7 @@ public:
     }
 
 private:
-    struct Entry { uint16_t anchor; uint16_t tag; float rxp; float range; bool eligible; };
+    struct Entry { uint16_t anchor; uint16_t tag; float rxp; float range; bool eligible; uint32_t lastMs; };
     Entry   _e[TR_MAX_ENTRIES];
     uint8_t _n = 0;
 };
