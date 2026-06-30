@@ -33,6 +33,8 @@ the radio responder** (role inversion) — see [VARIANTS.md](VARIANTS.md).
    - **[DESIGN_distributed_tdma_core.md](DESIGN_distributed_tdma_core.md)** — deep design (single-channel single-slot MGM + lease + scheduler).
    - **[DESIGN_distributed_tdma_mgm.md](DESIGN_distributed_tdma_mgm.md)** — the MGM coordination algorithm in detail.
    - **[DESIGN_distributed_tdma_modules.md](DESIGN_distributed_tdma_modules.md)** — per-module API of the meshagent modules.
+6. firmware ranging engine (shared by both models):
+   - **[DESIGN_dstwr_multianchor.md](DESIGN_dstwr_multianchor.md)** — restructure the mf-DW1000 DS-TWR engine to assume multi-anchor (interleaved) reception.
 
 ## Conventions
 
