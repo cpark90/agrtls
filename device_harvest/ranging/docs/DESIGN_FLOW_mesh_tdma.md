@@ -1,8 +1,9 @@
-# Design Flow / Decision Log — mesh TDMA
+# Design flow — mesh-TDMA (decision log)
 
-A chronological record of how we arrived at [`ARCHITECTURE_mesh_tdma.md`](./ARCHITECTURE_mesh_tdma.md). Each step is **Situation → Finding/new constraint → Decision/pivot**, to trace why the design is what it is. (Terminology defined in the architecture doc, §1.)
+> Chronological record of how the **mesh-TDMA** design was reached, as
+> **Situation → Finding → Decision/pivot**. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
-> Note: written in English per explicit request, for clarity.
+Leads to [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md).
 
 ---
 

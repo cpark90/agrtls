@@ -1,17 +1,20 @@
-# CORE 1st-Scope — Module API Design
+# mesh-TDMA design — module API
 
-Per-module function signatures and state-transition tables for the four pure, host-testable modules of the first CORE pass. See [`DESIGN_P3_scope1.md`](./DESIGN_P3_scope1.md) for the surrounding spec.
-
-> Written in English per request. Code itself uses Korean comments (CLAUDE.md), English identifiers.
+> Function signatures + state tables for the pure, host-testable meshagent modules. Terms:
+> [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Surrounding spec:
+> [DESIGN_P3_scope1.md](DESIGN_P3_scope1.md).
 
 ---
 
 ## Shared conventions
 
+- **Location**: these modules (+ `mgm_msg.h`) are meshagent-only and live in the variant folder
+  `src/anchor_dw1000_accuracy_meshagent/` (self-contained), NOT in `src/common`. Host test
+  `test_p3_modules.cpp` builds with `-I src/common -I src/anchor_dw1000_accuracy_meshagent`.
 - **Pure / host-testable**: no `Arduino.h`, no radio. Time injected as `uint32_t nowMs`. I/O via POD message structs (pull model, no callbacks).
 - **No dynamic allocation**: fixed-size arrays. `MAX_TAGS = 12` (= `MAX_DEVICES`), `MAX_NEIGHBORS = 12`.
 - Sentinels: `PS_NONE = 0xFFFF` (tag addr), `MGM_NONE = 0xFF` (slot).
-- The `*_meshagent` variant only wires ESP-MESH/UWB to these modules.
+- The `*_meshagent` variant only wires ESP-NOW/UWB to these modules.
 
 ## 1. `superframe.h` — slot/superframe timing
 

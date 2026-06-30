@@ -1,9 +1,12 @@
-# Architecture: Distributed Multi-Agent UWB TDMA over ESP-MESH (Design v4)
+# Architecture — mesh-TDMA
 
-This document is the consolidated, agreed design for **collision-free coordination of UWB distance measurement** in a multi-anchor / multi-tag environment. For *how* we arrived at these decisions (the constraint-by-constraint evolution), see [`DESIGN_FLOW_mesh_tdma.md`](./DESIGN_FLOW_mesh_tdma.md). For the detailed design of the coordination layer (L3/L4), see [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md).
+> The **earlier** model (the `anchor_dw1000_accuracy_meshagent` variant): each anchor schedules its own
+> tags and anchors negotiate slots via MGM over the mesh. Superseded by window-TDMA for clustering, but
+> kept. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
-> Note: written in English (overriding the CLAUDE.md "docs in Korean" convention) per explicit
-> request, for terminology clarity.
+Consolidated design for **collision-free coordination of UWB distance measurement** in a multi-anchor /
+multi-tag environment. How the decisions were reached: [DESIGN_FLOW_mesh_tdma.md](DESIGN_FLOW_mesh_tdma.md).
+Detailed coordination-layer (L3/L4) design: [DESIGN_P3_core_mgm.md](DESIGN_P3_core_mgm.md).
 
 ---
 

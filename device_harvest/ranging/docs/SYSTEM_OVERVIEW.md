@@ -1,8 +1,12 @@
-# System Overview — Multi-Anchor / Multi-Tag UWB Localization Ranging
+# System overview
 
-Top-level explanation of the whole system as currently designed. Depth lives in [`ARCHITECTURE_window_tdma.md`](./ARCHITECTURE_window_tdma.md) (authoritative); the evolution is in [`DESIGN_FLOW_mesh_tdma.md`](./DESIGN_FLOW_mesh_tdma.md). Variants: [`VARIANTS.md`](./VARIANTS.md).
+> The big picture: entities, roles, the anchor↔tag relationship graphs, and how ranging is scheduled.
+> Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
-> Diagrams are given as Mermaid (renders on GitHub) **and** ASCII (visible anywhere).
+Top-level explanation of the whole system. Depth is in
+[ARCHITECTURE_window_tdma.md](ARCHITECTURE_window_tdma.md) (authoritative); the evolution is in
+[DESIGN_FLOW_mesh_tdma.md](DESIGN_FLOW_mesh_tdma.md); variants in [VARIANTS.md](VARIANTS.md).
+Diagrams are given as Mermaid (renders on GitHub) **and** ASCII (visible anywhere).
 
 ---
 

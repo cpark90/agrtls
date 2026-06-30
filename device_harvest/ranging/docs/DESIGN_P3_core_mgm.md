@@ -1,8 +1,9 @@
-# CORE (P3) Detailed Design — Multi-Agent Slot×Channel Coordination (MGM)
+# mesh-TDMA design — MGM slot coordination
 
-Detailed design of the coordination core. See [`ARCHITECTURE_mesh_tdma.md`](./ARCHITECTURE_mesh_tdma.md) for the overall system and §1 there for shared terminology. Design only — no code.
-
-> Note: written in English per explicit request, for clarity.
+> Detailed design of the mesh-TDMA coordination core: distributed slot×channel assignment via MGM.
+> Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Overview:
+> [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md). Modules:
+> [DESIGN_P3_modules.md](DESIGN_P3_modules.md). Scope/depth: [DESIGN_P3_scope1.md](DESIGN_P3_scope1.md).
 
 ---
 

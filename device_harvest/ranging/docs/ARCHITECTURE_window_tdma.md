@@ -1,8 +1,12 @@
-# Architecture: Window-based Two-Level TDMA (authoritative)
+# Architecture — window-TDMA (authoritative)
 
-Consolidated design after the requirement was clarified to **localization-grade ranging**: for a given tag, all of its anchor ranges must be **temporally clustered** so they can be used together in a position fix. This supersedes the earlier anchor-centric design in [`ARCHITECTURE_mesh_tdma.md`](./ARCHITECTURE_mesh_tdma.md) (kept as history).
+> The **current/authoritative** ranging model: all anchors range the *same* tag per window so a tag's
+> ranges are time-clustered for localization. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
-> Written in English for clarity (consistent with the other design docs).
+Consolidated design after the requirement was clarified to **localization-grade ranging**: for a given
+tag, all of its anchor ranges must be **temporally clustered** so they can be used together in a
+position fix. This supersedes the earlier anchor-centric model in
+[ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md) (kept as history).
 
 ---
 
@@ -105,7 +109,9 @@ There is **no tag mesh** (tags can't reliably talk — R7). All coordination is 
 
 ## 7. Reuse from F-a / F-b
 
-- **ESP-NOW mesh** (anchor↔anchor) — carries `TAGINFO`, MGM `VALUE/GAIN`, `SYNC`.
+- **ESP-NOW mesh** (anchor↔anchor) — window-TDMA carries `TAGINFO` + `SYNC` (`mesh_msg.h` +
+  `mesh_wire.h`). The MGM `VALUE/GAIN/TAGLIST/AUDIBLE` messages are meshagent-only (`mgm_msg.h`, in
+  the meshagent variant folder); `mesh_link.h` is the shared transport.
 - **epoch gossip sync** — now aligns **windows** across anchors (not just slots).
 - **MGM / interference** — assigns the fair **anchor-slot** order within a window.
 - **peer_scheduler far/weak logic** — repurposed to compute **per-tag weight → window allocation**.
@@ -134,91 +140,107 @@ There is **no tag mesh** (tags can't reliably talk — R7). All coordination is 
 
 windowLen, anchor-slot length, superframe/schedule length `L`, link-quality `linkQuality` (RXP/range→quality), anchor-selection threshold `θ_link`, candidate probe rate `K_probe`, registry update/rate-limit period, epoch-sync period.
 
-구현된 튜너블(§11.5): `slotLen`/guard(`WindowFrameConfig`), `MAX_SLOTS_PER_WINDOW`(슬롯 상한), `WC_MAX_WINDOWS`(active 윈도우 상한), `TR_ENTRY_TTL_MS`(엔트리 aging), 응답기 `INACTIVITY_TIME`(≥ superframe), `TQ_LINK_THRESH`/`TQ_HYSTERESIS`/`TQ_EMA_ALPHA`(링크 품질). `numWindows`·`slotsPerWindow`는 공유 레지스트리에서 동적 산출.
+Implemented tunables (§11.5): `slotLen`/guard (`WindowFrameConfig`), `MAX_SLOTS_PER_WINDOW` (slot cap),
+`WC_MAX_WINDOWS` (active-window cap), `TR_ENTRY_TTL_MS` (entry aging), responder `INACTIVITY_TIME`
+(≥ superframe), `TQ_LINK_THRESH` / `TQ_HYSTERESIS` / `TQ_EMA_ALPHA` (link quality). `numWindows` and
+`slotsPerWindow` are derived dynamically from the shared registry.
 
-## 11. Responder layer & W-4 hardware validation (구현/검증 완료)
+## 11. Responder layer & hardware validation (implemented)
 
-§1~9는 스케줄러(앵커) 계층의 설계다. 실제 HW 검증(W-4)에서 **응답기(물리 태그) 계층**이 stock
-mf-DW1000 데모의 단일-피어 수동 설계라 영구배제 방지 불변식을 깨는 것이 드러나 함께 보강했다.
+§1–9 are the scheduler (anchor) design. HW validation (W-4) showed the **responder (physical tag)
+layer** — the stock mf-DW1000 single-peer design — broke the no-permanent-exclusion invariant, so it
+was hardened too. This section documents the implemented + HW-validated layers.
 
-### 11.1 응답기 계층 (mf_DW1000, `_type==ANCHOR`)
-역할 반전 모델에서 물리 태그가 응답기다. 여러 앵커가 한 태그를 측정(클러스터링)하려면 응답기가
-다중 initiator를 동시 보유·서비스해야 한다. 보강 내용:
+### 11.1 Responder layer (mf-DW1000, `_type==ANCHOR`)
+Under role inversion the physical tag is the responder. For several anchors to range one tag
+(clustering), the responder must hold and serve many initiators at once:
 
-- **다중 device 보유**: `addNetworkDevices()`의 "1 TAG" 리셋 제거(+ `MAX_DEVICES` 바운드). 응답기가
-  여러 앵커를 동시에 등록.
-- **per-device 프로토콜 상태**: `_expectedMsgId`/`_protocolFailed`를 `DW1000Device`로 이동. 여러
-  앵커의 POLL→RANGE 교환이 인터리브돼도 서로 깨지지 않음(초기자 경로는 전역 상태 유지).
-- **admit-on-POLL (+ 타겟 체크)**: 미지 initiator가 **self를 타겟한** POLL을 보내면 즉시 (재)등록.
-  aged-out된 앵커가 BLINK 없이 재진입 → 영구배제 해소(§4.5의 candidate 원칙을 라디오 계층에서 보장).
-  엿들은(다른 태그 대상) POLL로는 등록하지 않음 → device table churn 방지.
-- **short-address dedup**: 등록 식별자를 short 주소로 통일(admit-on-POLL과 BLINK 중복 엔트리 방지).
+- **multi-device hold**: drop the "1 TAG" reset in `addNetworkDevices()` (+ a `MAX_DEVICES` bound) so
+  the responder registers many anchors simultaneously.
+- **per-device protocol state**: move `_expectedMsgId`/`_protocolFailed` onto `DW1000Device`, so
+  interleaved POLL→RANGE exchanges from different anchors don't clobber each other.
+- **admit-on-POLL (with target check)**: an unknown initiator whose POLL is **addressed to us**
+  re-registers immediately — an aged-out anchor rejoins without a fresh BLINK (the §4.5 candidate
+  principle, enforced at the radio layer). A POLL overheard for another tag does **not** register the
+  sender (avoids table churn).
+- **short-address dedup**: device identity = short address (prevents an admit-on-POLL entry and a
+  BLINK entry duplicating one anchor).
+- **per-model loops + destination check**: `DW1000Ranging` has a single-role loop per model —
+  `loop()` (native), `loopInitiator()`/`loopResponder()` (window-TDMA), `loopMeshagent()` (mesh-TDMA).
+  The TDMA loops add a destination check (`frameForMe`): a unicast frame overheard for *another* node
+  (e.g. another anchor's `POLL_ACK`/`RANGE_REPORT`) is ignored, so an anchor never logs another
+  anchor's measurement as its own.
 
-### 11.2 앵커 폴링/윈도우 (anchor_dw1000_window)
-- **동적 윈도우 수**: 프레임이 고정 N윈도우가 아니라 `activeW = wc.numWindows()` + **후행 probe
-  윈도우 1개**만 순회(빈 윈도우 미순회). probe 윈도우 유무를 공유-결정적(`activeW+1`)으로 두어
-  앵커 간 superframe 길이를 일치시킴(epoch 동기 유지).
-- **probe/부트스트랩 대상** = "SELF가 아직 effective가 **아닌** 발견 태그"(bootstrap=미측정,
-  global candidate, 약링크 재탐색 모두 포함). 이게 없으면 한 번도 측정 안 한 active 태그를 영영
-  못 잰다(effective여야 active 윈도우에서 폴 → 데드락).
-- **슬롯당 1폴**: greedy 다중 폴 제거 → 교환이 슬롯 경계를 넘지 않음. (anchor-slot 배정과
-  `slotsPerWindow` 동적화는 §11.5 참조.)
-- **타임아웃 시 가짜 -120 보고 금지**: 일시적 타임아웃 한 번이 좋은 링크를 candidate로 뒤집어
-  coloring/epoch을 흔들던 문제 제거.
+### 11.2 Anchor polling / windows (`anchor_dw1000_window`)
+- **dynamic window count**: the frame cycles `activeW = wc.numWindows()` active windows **+ one
+  trailing probe window**, never empty windows. The probe window is always present so the per-anchor
+  superframe length (`activeW+1`) is shared-deterministic → epoch sync stays aligned.
+- **probe / bootstrap target** = a discovered tag this anchor is **not yet effective** for (covers
+  bootstrap = never-measured, global candidates, weak-link reprobe). Without it an anchor could never
+  start ranging an active tag it hadn't measured (it isn't in `tagForWindow` until effective → deadlock).
+- **one poll per slot**: no greedy re-poll, so an exchange never spills past the slot edge. (Anchor-slot
+  assignment and dynamic `slotsPerWindow`: §11.5.)
+- **no fake -120 timeout report**: a single transient timeout must not overwrite a good link and flip
+  the tag to candidate (which would desync coloring/epoch).
 
-### 11.3 검증 결과 (앵커 2 + 태그 2)
-- ✓ **클러스터링**: 두 앵커가 같은 태그(T0)를 모두 측정. 영구배제 없음(약한 T1도 probe로 측정).
-- ✓ device table churn 최소화, per-device 상태로 동시 교환 안정.
-- ✓ **link-quality 안정화(완료)**: 임계값 근처(RXP mean ≈ −85, 편차 −67~−102 멀티패스) 링크가
-  샘플마다 eligibility를 뒤집어 coloring이 active↔candidate로 진동 → superframe 길이가 흔들려
-  epoch 동기가 불안정하던 문제를 `tag_quality.h`에 **EMA 평활 + 히스테리시스**를 넣어 해결.
-  레지스트리가 링크별 평활 RXP와 히스테리시스 eligibility 상태를 보관 → 단일 노이즈 샘플이 스케줄을
-  못 흔든다. 결과: coloring 안정·앵커 간 합의·epoch 동기 안정. 멀티패스로 marginal한 링크는
-  candidate로 안정 수렴(클러스터링에서 제외하되 probe로 계속 측정 — localization 품질상 타당).
-  파라미터: `TQ_LINK_THRESH`(−85), `TQ_HYSTERESIS`(±3dB), `TQ_EMA_ALPHA`(0.3) — pluggable.
+### 11.3 Validation (2 anchors + 2 tags)
+- ✓ **clustering**: both anchors range the same tag (T0). No permanent exclusion — the weak tag (T1)
+  is still measured via the probe window.
+- ✓ minimal device-table churn; per-device state keeps concurrent exchanges stable.
+- ✓ **link-quality stabilization**: a link near the threshold (RXP mean ≈ −85, spread −67…−102 from
+  multipath) flipped eligibility every sample → coloring oscillated active↔candidate → the superframe
+  length wobbled → epoch desynced. Fixed in `tag_quality.h` with **EMA smoothing + hysteresis**: the
+  registry keeps a smoothed RXP and a hysteretic `eligible` state per link, so one noisy sample can't
+  move the schedule. Result: coloring stable, anchors agree, epoch steady; a genuinely marginal link
+  settles as candidate (excluded from clustering but still probed — correct for localization quality).
+  Params: `TQ_LINK_THRESH` (−85), `TQ_HYSTERESIS` (±3 dB), `TQ_EMA_ALPHA` (0.3) — pluggable.
 
-> 참고: 한 앵커가 marginal 태그를 **discovery조차 못 하는** 경우(약한 BLINK/RANGING_INIT 왕복)는
-> 물리 링크 한계다. 해당 태그는 닿는 앵커만 측정하며 candidate+probe로 graceful degrade한다.
+> Note: if an anchor can't even **discover** a marginal tag (weak BLINK↔RANGING_INIT round-trip), that
+> is a physical-link limit (§11.6). Such a tag is ranged only by the anchors that reach it, degrading
+> gracefully via candidate+probe.
 
-### 11.4 개발 보조
-- `.claude/skills/uwb-bench` — 노드 빌드/업로드(`flash.sh`), 비-TTY 시리얼 캡처(`serial_capture.py`),
-  디바이스별 range 집계(`tally.py`). `pio device monitor`가 비대화형에서 TTY를 요구해 실패하므로 사용.
+### 11.4 Dev tooling
+- `.claude/skills/uwb-bench` — node build/upload (`flash.sh`), non-TTY serial capture
+  (`serial_capture.py`), per-device range tally (`tally.py`). Used because `pio device monitor` needs
+  an interactive TTY and fails in a non-interactive shell.
 
-### 11.5 anchor-slot coloring · 동적 슬롯 · aging · cross-anchor 일관성 (구현/검증 완료)
+### 11.5 Anchor-slot coloring · dynamic slots · aging · cross-anchor consistency (implemented)
 
-5~10 앵커 확장을 위한 한 윈도우 내 앵커 슬롯 배정과, 그것이 앵커 간 깨지지 않게 하는 일관성 보강.
+Anchor-slot assignment within a window for the 5–10 anchor case, plus the consistency that keeps it
+from diverging across anchors:
 
-- **결정적 anchor-slot coloring**: 한 윈도우 안에서 앵커의 슬롯 = 그 윈도우 태그의 **effective
-  앵커들 중 자기 rank**(`TagRegistry::anchorRank`, id 오름차순). 같은 태그를 재는 앵커들은 서로 다른
-  슬롯을 받아 충돌-프리. **윈도우 coloring과 동일하게 공유 레지스트리에서 결정적**으로 계산하므로
-  MGM 협의가 불필요하다(MGM은 공유-레지스트리 가정을 버릴 때만 필요 — 현 설계에선 불필요).
-- **동적 `slotsPerWindow`** = 임의 태그의 최대 effective 앵커 수(`maxEffectiveAnchorCount`,
-  `WindowFrame::setSlotsPerWindow`, `MAX_SLOTS_PER_WINDOW`로 상한). 정확히 필요한 만큼만 → 슬롯 낭비 없음.
-- **inactivity timeout**: superframe = `numWindows*slotsPerWindow*slotLen`가 앵커 증가로 1s를 넘을
-  수 있어 응답기 `INACTIVITY_TIME`을 1000→6000ms로 상향(admit-on-POLL이 backstop). superframe이
-  이 값에 근접하면 더 올릴 것.
-- **registry 엔트리 aging**: 링크별 `lastMs` + `TagRegistry::expire(now, TR_ENTRY_TTL_MS=5000)`.
-  사라진 (anchor,tag) 링크가 stale 엔트리로 남아 없는 태그를 계속 스케줄하거나 슬롯 수를 부풀리는
-  것을 방지. (`nowMs==0` 보고는 만료 대상 아님 — 호스트 테스트용.)
-- **owner-authoritative eligibility (일관성 핵심)**: eligibility를 **링크 소유 앵커가 자기 평활
-  이력으로 한 번 결정**해 TAGINFO의 `eligible` 비트로 발행하고, 수신 앵커는 **그대로 채택**
-  (`reportPeer`)한다. 각 앵커가 독립적으로 EMA/히스테리시스를 재계산하면 marginal 링크가 한쪽은
-  eligible·다른 쪽은 아니어서 slots/coloring이 갈라지고 epoch이 어긋난다 — 이를 제거. 앵커는 자기
-  링크(평활 RXP + 결정)를 `selfLinks`로 추출해 발행한다.
-- **검증(앵커 2 + 태그 2)**: 두 앵커의 `slots`·`sched`가 일치(이전엔 slots 1 vs 2로 갈림).
-  anchorRank/aging/maxEffectiveAnchorCount는 호스트 테스트로 검증.
+- **deterministic anchor-slot coloring**: an anchor's slot within a window = its **rank among the
+  window tag's effective anchors** (`TagRegistry::anchorRank`, by ascending id). Anchors ranging the
+  same tag get distinct slots → collision-free, computed deterministically from the shared registry
+  (like the window coloring), so **no MGM negotiation is needed** (MGM is only needed if the
+  shared-registry assumption is dropped).
+- **dynamic `slotsPerWindow`** = max effective anchors over any tag (`maxEffectiveAnchorCount`,
+  `WindowFrame::setSlotsPerWindow`, capped by `MAX_SLOTS_PER_WINDOW`) → exactly enough slots, no waste.
+- **inactivity timeout**: the superframe (`numWindows·slotsPerWindow·slotLen`) can exceed 1 s as anchors
+  grow, so the responder `INACTIVITY_TIME` was raised 1000→6000 ms (admit-on-POLL is the backstop);
+  raise further if the superframe approaches it.
+- **registry entry aging**: per-link `lastMs` + `TagRegistry::expire(now, TR_ENTRY_TTL_MS=5000)` drops
+  a vanished (anchor,tag) link so a gone tag stops being scheduled / inflating slot counts
+  (`nowMs==0` reports never expire — for host tests).
+- **owner-authoritative eligibility (the consistency key)**: a link's eligibility is decided **once by
+  the owner anchor** (from its own smoothed history), published in the TAGINFO `eligible` bit, and
+  adopted verbatim by receivers (`reportPeer`). If each anchor recomputed EMA/hysteresis independently,
+  a marginal link would be eligible on one and not another → divergent slots/coloring → epoch drift.
+  Anchors publish their own links (smoothed RXP + decision) via `selfLinks`.
+- **validation (2 anchors + 2 tags)**: both anchors agree on `slots` and `sched` (previously diverged
+  1 vs 2). `anchorRank` / aging / `maxEffectiveAnchorCount` are host-tested.
 
-### 11.6 물리 링크 한계 (펌웨어 밖 — 배치/캘리브레이션)
+### 11.6 Physical-link limits (outside firmware — placement / calibration)
 
-스케줄러·응답기 로직이 옳아도, **약한 링크는 discovery(BLINK↔RANGING_INIT 왕복)부터 실패**할 수
-있다(예: A1↔T0가 멀어 A1이 T0를 아예 발견 못 함). 이는 펌웨어 버그가 아니라 물리 한계이며 다음으로
-대응한다:
+Even with correct scheduler + responder logic, **a weak link can fail at discovery** (the
+BLINK↔RANGING_INIT round-trip) — e.g. A1 never discovers a far T0. This is a physical limit, not a bug;
+mitigations:
 
-- **앵커 배치/높이**: 태그가 항상 ≥3개 앵커의 LOS 안에 들도록(localization엔 ≥3 필요). 멀티패스가
-  큰 위치는 피한다.
-- **안테나 딜레이 캘리브레이션**(CLAUDE.md 1차 의심 대상): 기본값(16384/16385) 사용 금지, 모듈별로
-  캘리브레이션. 미캘리브레이션 시 거리·RXP가 틀어져 `θ_link` 부근에서 잘못 marginal 판정될 수 있다.
-- **TX power / RF 모드**: 근거리 새추레이션(−40dBm 이상)은 TX 하향, 원거리 약신호는 ACCURACY 모드
-  (110k/긴 프리앰블)로 감도 확보.
-- 시스템은 닿지 않는 앵커-태그 쌍을 candidate+probe로 graceful degrade하므로, 물리 개선 전까지도
-  닿는 앵커만으로 동작은 유지된다(단 그 태그의 클러스터 크기가 작아져 위치 정확도는 떨어진다).
+- **anchor placement / height**: keep each tag within LOS of ≥3 anchors (localization needs ≥3); avoid
+  high-multipath spots.
+- **antenna-delay calibration** (`CLAUDE.md` #1 suspect): never ship the default (16384/16385);
+  calibrate per module. Uncalibrated delay skews range/RXP and can mis-judge marginal links near `θ_link`.
+- **TX power / RF mode**: at close range, near-saturation (>−40 dBm) → lower TX; at long range, use
+  ACCURACY mode (110 k / long preamble) for sensitivity.
+- The system degrades gracefully (candidate+probe) for anchor-tag pairs that don't reach, so it keeps
+  working with the anchors that do — but that tag's cluster shrinks and its position accuracy drops.

@@ -1,8 +1,8 @@
-# CORE 1st-Scope — Deep Design (single-channel, single-slot MGM + lease + intra-anchor scheduler)
+# mesh-TDMA design — deep design (CORE 1st-scope)
 
-Implementation-ready design for the first CORE pass. Builds on [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md); terminology in [`ARCHITECTURE_mesh_tdma.md`](./ARCHITECTURE_mesh_tdma.md) §1.
-
-> Written in English per request. Design only — no code.
+> Implementation-ready design for the first mesh-TDMA pass: single-channel, single-slot MGM + lease +
+> intra-anchor scheduler. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Builds on
+> [DESIGN_P3_core_mgm.md](DESIGN_P3_core_mgm.md); modules in [DESIGN_P3_modules.md](DESIGN_P3_modules.md).
 
 ---
 
@@ -137,14 +137,20 @@ during my slot (repeat across the work-window):
 
 All low rate (a few packets per superframe) → small mesh load.
 
-## L. Module decomposition (files; no code yet)
+## L. Module decomposition (files)
 
-- `src/common/superframe.h` — slot/superframe timing (pure, host-testable; evolves the earlier `tdma_slot.h`)
-- `src/common/peer_scheduler.h` — L4 tag aging scheduler (pure, host-testable)
-- `src/common/mgm_agent.h` — L3 single-slot MGM logic (mesh/UWB-agnostic, pure, host-testable)
-- `src/common/interference.h` — fused interference graph (shared-tag ∪ audible) + lease/aging
-- `src/{anchor_dw1000_*_meshagent}/main.cpp` — wires ESP-MESH + UWB (TWR + promiscuous overhear) + agent
-- mf-DW1000 hooks (§J)
+These modules are **meshagent-only**, so they live in the variant folder (self-contained, NOT in
+`src/common`): `src/anchor_dw1000_accuracy_meshagent/`
+
+- `superframe.h` — slot/superframe timing (pure, host-testable; evolves the earlier `tdma_slot.h`)
+- `peer_scheduler.h` — L4 tag aging scheduler (pure, host-testable)
+- `mgm_agent.h` — L3 single-slot MGM logic (mesh/UWB-agnostic, pure, host-testable)
+- `interference.h` — fused interference graph (shared-tag ∪ audible) + lease/aging
+- `mgm_msg.h` — VALUE/GAIN/TAGLIST/AUDIBLE wire (de)serialization (uses shared `mesh_wire.h`)
+- `main.cpp` — wires ESP-NOW + UWB (`loopMeshagent()`: TWR + promiscuous overhear) + the agent
+
+Shared infra from `src/common`: `mesh_link.h` (ESP-NOW transport), `mesh_wire.h` (cursors + SYNC),
+`logging.h`, plus mf-DW1000 hooks (§J).
 
 ## M. Parameters (initial, locked for F-a start)
 
