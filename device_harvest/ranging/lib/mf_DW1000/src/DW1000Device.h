@@ -100,6 +100,12 @@ public:
 	byte    getExpectedMsg() const   { return _rxExpectedMsg; }
 	void    setProtocolFailed(boolean f) { _protocolFailed = f; }
 	boolean getProtocolFailed() const    { return _protocolFailed; }
+	// Per-cycle freshness of timePollAckReceived (initiator side): cleared when the broadcast POLL is
+	// sent, set when THIS device's POLL_ACK arrives. transmitRange() embeds only fresh devices, so a
+	// device that missed its POLL_ACK never ships a stale timePollAckReceived (which would make the
+	// responder's round1/reply2 wrap to ~2^40 and overflow the asymmetric-TWR int64 product).
+	void    setPollAckFresh(boolean f) { _pollAckFresh = f; }
+	boolean getPollAckFresh() const    { return _pollAckFresh; }
 
 
 private:
@@ -111,6 +117,7 @@ private:
 	int8_t       _index; // not used
 	byte         _rxExpectedMsg = 0;       // POLL; per-device responder expected next message
 	boolean      _protocolFailed = false;  // per-device responder exchange failure flag
+	boolean      _pollAckFresh   = false;  // initiator: POLL_ACK received this POLL cycle (see setPollAckFresh)
 	
 	int16_t _range;
 	int16_t _RXPower;

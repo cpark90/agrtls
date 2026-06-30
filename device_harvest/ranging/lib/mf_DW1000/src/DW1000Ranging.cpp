@@ -425,6 +425,7 @@ void DW1000RangingClass::loop() {
 					//we save the value for all the devices !
 					for(uint16_t i = 0; i < _networkDevicesNumber; i++) {
 						_networkDevices[i].timePollSent = timePollSent;
+						_networkDevices[i].setPollAckFresh(false);   // new cycle: invalidate last POLL_ACK
 					}
 				}
 				else {
@@ -670,6 +671,7 @@ void DW1000RangingClass::loop() {
 				}
 				if(messageType == POLL_ACK) {
 					DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+					myDistantDevice->setPollAckFresh(true);   // this device's timePollAckReceived is current
 					//we note activity for our device:
 					myDistantDevice->noteActivity();
 
@@ -746,7 +748,10 @@ void DW1000RangingClass::loopInitiator() {
 		if(messageType == POLL) {
 			DW1000Time timePollSent; DW1000.getTransmitTimestamp(timePollSent);
 			if(_lastSentToShortAddress[0] == 0xFF && _lastSentToShortAddress[1] == 0xFF) {
-				for(uint16_t i = 0; i < _networkDevicesNumber; i++) _networkDevices[i].timePollSent = timePollSent;
+				for(uint16_t i = 0; i < _networkDevicesNumber; i++) {
+					_networkDevices[i].timePollSent = timePollSent;
+					_networkDevices[i].setPollAckFresh(false);   // new cycle: invalidate last POLL_ACK
+				}
 			} else {
 				DW1000Device* d = searchDistantDevice(_lastSentToShortAddress);
 				if(d) d->timePollSent = timePollSent;
@@ -788,6 +793,7 @@ void DW1000RangingClass::loopInitiator() {
 			if(messageType != _expectedMsgId) return;
 			if(messageType == POLL_ACK) {
 				DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+				myDistantDevice->setPollAckFresh(true);   // this device's timePollAckReceived is current
 				myDistantDevice->noteActivity();
 				if(_scheduledMode) {
 					if(myDistantDevice->getIndex() == _currentPollDevice) {
@@ -1198,26 +1204,29 @@ void DW1000RangingClass::transmitRange(DW1000Device* myDistantDevice) {
 		byte shortBroadcast[2] = {0xFF, 0xFF};
 		_globalMac.generateShortMACFrame(data, _currentShortAddress, shortBroadcast);
 		data[SHORT_MAC_LEN]   = RANGE;
-		//we enter the number of devices
-		data[SHORT_MAC_LEN+1] = _networkDevicesNumber;
-		
+
 		// delay sending the message and remember expected future sent timestamp
 		DW1000Time deltaTime     = DW1000Time(DEFAULT_REPLY_DELAY_TIME, DW1000Time::MICROSECONDS);
 		DW1000Time timeRangeSent = DW1000.setDelay(deltaTime);
-		
+
+		// Embed ONLY devices whose POLL_ACK arrived this cycle. A device that missed its POLL_ACK still
+		// holds a stale timePollAckReceived; shipping it would make the responder's round1/reply2 wrap
+		// to ~2^40 and overflow the int64 product -> negative/huge range. Skipping it just drops that
+		// device for this cycle; it re-syncs on the next POLL. The count below reflects what we packed.
+		uint8_t numFresh = 0;
 		for(uint8_t i = 0; i < _networkDevicesNumber; i++) {
+			if(!_networkDevices[i].getPollAckFresh()) continue;
 			//we write the short address of our device:
-			memcpy(data+SHORT_MAC_LEN+2+17*i, _networkDevices[i].getByteShortAddress(), 2);
-			
-			
+			memcpy(data+SHORT_MAC_LEN+2+17*numFresh, _networkDevices[i].getByteShortAddress(), 2);
 			//we get the device which correspond to the message which was sent (need to be filtered by MAC address)
 			_networkDevices[i].timeRangeSent = timeRangeSent;
-			_networkDevices[i].timePollSent.getTimestamp(data+SHORT_MAC_LEN+4+17*i);
-			_networkDevices[i].timePollAckReceived.getTimestamp(data+SHORT_MAC_LEN+9+17*i);
-			_networkDevices[i].timeRangeSent.getTimestamp(data+SHORT_MAC_LEN+14+17*i);
-			
+			_networkDevices[i].timePollSent.getTimestamp(data+SHORT_MAC_LEN+4+17*numFresh);
+			_networkDevices[i].timePollAckReceived.getTimestamp(data+SHORT_MAC_LEN+9+17*numFresh);
+			_networkDevices[i].timeRangeSent.getTimestamp(data+SHORT_MAC_LEN+14+17*numFresh);
+			numFresh++;
 		}
-		
+		data[SHORT_MAC_LEN+1] = numFresh;   // number of devices actually embedded (fresh this cycle)
+
 		copyShortAddress(_lastSentToShortAddress, shortBroadcast);
 		
 	}
