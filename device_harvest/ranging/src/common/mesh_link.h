@@ -20,7 +20,6 @@
 #include <esp_now.h>
 #include <esp_wifi.h>
 #include <string.h>
-#include "mesh_msg.h"
 
 #ifndef MESH_RX_QUEUE_LEN
 #define MESH_RX_QUEUE_LEN 16
@@ -28,10 +27,15 @@
 #ifndef MESH_WIFI_CHANNEL
 #define MESH_WIFI_CHANNEL 1
 #endif
+// Generic transport frame size (independent of the message set). Must hold the largest message any
+// variant sends/receives over the shared channel (window TAGINFO is the biggest at ~116 B).
+#ifndef MESH_LINK_MAX_FRAME
+#define MESH_LINK_MAX_FRAME 128
+#endif
 
 class MeshLink {
 public:
-    struct Frame { uint8_t len; uint8_t data[MESH_MAX_FRAME]; };
+    struct Frame { uint8_t len; uint8_t data[MESH_LINK_MAX_FRAME]; };
 
     bool begin(uint8_t channel = MESH_WIFI_CHANNEL) {
         _queue = xQueueCreate(MESH_RX_QUEUE_LEN, sizeof(Frame));
@@ -68,7 +72,7 @@ private:
 
     // ESP-NOW receive callback (arduino-esp32 2.x signature). Runs in WiFi task context.
     static void onRecv(const uint8_t* /*mac*/, const uint8_t* data, int len) {
-        if (!_self || !_self->_queue || len <= 0 || len > (int)MESH_MAX_FRAME) return;
+        if (!_self || !_self->_queue || len <= 0 || len > (int)MESH_LINK_MAX_FRAME) return;
         Frame f;
         f.len = (uint8_t)len;
         memcpy(f.data, data, len);

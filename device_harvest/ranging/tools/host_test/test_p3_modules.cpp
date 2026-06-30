@@ -1,6 +1,7 @@
-// Host unit tests (g++, no radio/Arduino) -- verify the pure CORE 1st-scope modules.
-//   build: g++ -std=c++17 -I ../../src/common test_p3_modules.cpp -o t && ./t
-// 4 modules: superframe / peer_scheduler / interference / mgm_agent
+// Host unit tests (g++, no radio/Arduino) -- verify the pure meshagent CORE modules.
+//   build: g++ -std=c++17 -I ../../src/common -I ../../src/anchor_dw1000_accuracy_meshagent \
+//          test_p3_modules.cpp -o t && ./t
+// 4 modules + MGM messages (all in the meshagent variant folder now).
 #include <cstdio>
 #include <cmath>
 #include <cstdint>
@@ -8,7 +9,7 @@
 #include "peer_scheduler.h"
 #include "interference.h"
 #include "mgm_agent.h"
-#include "mesh_msg.h"
+#include "mgm_msg.h"
 
 static int g_fail = 0;
 #define CHECK(cond) do { if(!(cond)){ printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); g_fail++; } } while(0)
@@ -125,7 +126,7 @@ static void test_mgm_clique() {
 }
 
 static void test_mesh_msg() {
-    uint8_t buf[MESH_MAX_FRAME];
+    uint8_t buf[64];
 
     // VALUE round-trip
     ValueMsg v{7, 0x0042, 3, 123456}, v2{};

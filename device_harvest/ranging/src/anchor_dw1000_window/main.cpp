@@ -29,7 +29,8 @@
 #include "tag_quality.h"
 #include "window_color.h"
 #include "window_frame.h"
-#include "mesh_link.h"   // pulls mesh_msg.h
+#include "mesh_msg.h"    // TAGINFO (+ mesh_wire: SYNC, meshMsgType)
+#include "mesh_link.h"   // ESP-NOW transport
 
 #ifndef ANCHOR_ID
 #define ANCHOR_ID 0

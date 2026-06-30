@@ -129,7 +129,7 @@ static void test_taginfo() {
     CHECK(r.effectiveAnchorCount(2) == 0);   // owner said NOT eligible
 
     CHECK(!unpackTagInfo(buf, 3, aid, out, 8, n));   // truncated
-    uint8_t v[MESH_MAX_FRAME]; ValueMsg vm{1,2,3,4}; packValue(vm, v);
+    uint8_t v[MESH_MAX_FRAME] = {0}; v[0] = MESH_SYNC;   // a non-TAGINFO type byte
     CHECK(!unpackTagInfo(v, 10, aid, out, 8, n));     // wrong type
 }
 

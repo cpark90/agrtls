@@ -22,11 +22,12 @@
 #include <DW1000Ranging.h>
 #include "rf_config_dw1000.h"
 #include "logging.h"
-#include "superframe.h"
+#include "superframe.h"      // meshagent-local modules (this variant folder)
 #include "peer_scheduler.h"
 #include "interference.h"
 #include "mgm_agent.h"
-#include "mesh_link.h"   // pulls in mesh_msg.h
+#include "mgm_msg.h"         // VALUE/GAIN/TAGLIST/AUDIBLE (+ mesh_wire: SYNC, meshMsgType)
+#include "mesh_link.h"       // ESP-NOW transport
 
 // Anchor number (different per board). byte0 = ANCHOR_ID -> short 0x00NN -> "A{ANCHOR_ID}".
 // For multi-anchor tests, override per board at build time:
@@ -63,10 +64,10 @@ static uint32_t lastPublishMs = 0;
 
 // ---- L3 outbound (ESP-NOW broadcast) ----
 static void meshSendValue(const ValueMsg& v) {
-    uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packValue(v, b));
+    uint8_t b[MESH_LINK_MAX_FRAME]; mesh.send(b, packValue(v, b));
 }
 static void meshSendGain(const GainMsg& g) {
-    uint8_t b[MESH_MAX_FRAME]; mesh.send(b, packGain(g, b));
+    uint8_t b[MESH_LINK_MAX_FRAME]; mesh.send(b, packGain(g, b));
 }
 
 // ---- UWB callbacks ----
@@ -162,7 +163,7 @@ static void meshPump(uint32_t now) {
 static void meshPublish(uint32_t now) {
     if ((uint32_t)(now - lastPublishMs) < PUBLISH_PERIOD_MS) return;
     lastPublishMs = now;
-    uint8_t  b[MESH_MAX_FRAME];
+    uint8_t b[MESH_LINK_MAX_FRAME];
     uint16_t myTags[PS_MAX_TAGS];
     uint8_t  nt = sched.tagIds(myTags, PS_MAX_TAGS);
     ig.setMyTags(myTags, nt);
