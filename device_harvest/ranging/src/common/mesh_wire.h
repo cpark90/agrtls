@@ -3,7 +3,7 @@
  *
  * Shared wire utilities for the ESP-NOW mesh control plane: little-endian byte cursors, the frame
  * type accessor, and the SYNC (slot-phase gossip) message used by BOTH TDMA models. Per-model message
- * sets live elsewhere: mesh_msg.h (window-TDMA: TAGINFO), mgm_msg.h (mesh-TDMA: VALUE/GAIN/...).
+ * sets live elsewhere: mesh_msg.h (synchronous TDMA: TAGINFO), mgm_msg.h (distributed TDMA: VALUE/GAIN/...).
  *
  * Pure: no radio/Arduino, host unit-testable.
  */
@@ -30,7 +30,7 @@ inline uint32_t getU32(const uint8_t*& p)        {
 // frame type, or 0 if empty
 inline uint8_t meshMsgType(const uint8_t* buf, uint8_t len) { return (len >= 1) ? buf[0] : 0; }
 
-// --- SYNC (slot-phase gossip) — used by both window and mesh TDMA ---
+// --- SYNC (slot-phase gossip) — used by both synchronous and distributed TDMA ---
 inline uint8_t packSync(uint16_t agentId, uint32_t phaseMs, uint8_t* buf) {
     uint8_t* p = buf;
     *p++ = MESH_SYNC;

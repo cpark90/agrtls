@@ -1,7 +1,7 @@
 /*
  * Variant: tag_dw1000_responder
  *
- * Mobile tag. In CORE mesh-TDMA the tag is the mf-DW1000 responder (startAsResponder) --
+ * Mobile tag. In CORE distributed TDMA the tag is the mf-DW1000 responder (startAsResponder) --
  * it only replies to the initiator (anchor) poll. No mesh / schedule / slots (simplest form).
  *   (role-inversion rationale: docs/DESIGN_FLOW_mesh_tdma.md Pivot 4-5)
  *

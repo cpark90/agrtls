@@ -169,7 +169,7 @@ Mobility / power churn → registry refresh → graph + coloring re-converge loc
 | Family | Variants | Roles (tag / anchor) | Summary |
 |---|---|---|---|
 | **Standard** | `tag/anchor_dw1000_accuracy` | initiator / responder | native mf-DW1000 broadcast ranging, ≤4 anchors per tag, no mesh |
-| **synchronous TDMA** | `anchor_dw1000_window` + `tag_dw1000_responder` | responder / initiator (scheduled) | the frame system above (§3–§6): one shared deterministic schedule, time-clustered ranges |
+| **synchronous TDMA** | `anchor_dw1000_synchronous` + `tag_dw1000_responder` | responder / initiator (scheduled) | the frame system above (§3–§6): one shared deterministic schedule, time-clustered ranges |
 | **distributed TDMA** | `anchor_dw1000_accuracy_meshagent` (+ the shared responder) | responder / initiator (MGM-negotiated) | earlier anchor-centric model: each anchor schedules its own tags, MGM slot×channel coordination |
 
 See [`VARIANTS.md`](./VARIANTS.md). In both scheduled families the roles are **inverted** relative to Standard (anchor initiates, tag responds).

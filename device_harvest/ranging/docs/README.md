@@ -13,7 +13,7 @@ The firmware has **two independent coordination models**, plus the stock broadca
 
 | Model | What it does | Variants | Status |
 |---|---|---|---|
-| **synchronous TDMA** | All anchors range the *same* tag per frame → ranges are time-clustered for localization. Deterministic coloring from a shared registry. | `anchor_dw1000_window`, `tag_dw1000_responder` | **current / authoritative** |
+| **synchronous TDMA** | All anchors range the *same* tag per frame → ranges are time-clustered for localization. Deterministic coloring from a shared registry. | `anchor_dw1000_synchronous`, `tag_dw1000_responder` | **current / authoritative** |
 | **distributed TDMA** | Each anchor schedules its *own* tags; anchors negotiate slots via MGM over the mesh. | `anchor_dw1000_accuracy_meshagent` | earlier model (kept, self-contained) |
 | **native broadcast** | Stock mf-DW1000 broadcast TWR, no scheduling. | `anchor_dw1000_accuracy`, `tag_dw1000_accuracy` | reference / bring-up |
 

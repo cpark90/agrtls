@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-이 파일은 이 리포지토리에서 작업하는 Claude Code를 위한 컨텍스트와 규칙을 정의합니다.
+이 파일은 이 리포지토리에서 작업하는 Claude Code를 위한 컨텍스트와 규칙을 정의합니다. 매 세션 시작 시 읽는다.
+결정 사항이 바뀌면 이 파일을 함께 갱신한다. (PC 모니터 쪽은 상위 CLAUDE.md를 본다.)
 
 ## 프로젝트 개요
 
@@ -96,6 +97,33 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - 칩 독립 로직(필터/로깅)은 `src/common`에 두고 모든 변종이 공유.
 - 매직 넘버 대신 named constant.
 - 새 변종은 가까운 기존 변종을 복사해 시작하고, VARIANTS.md + platformio.ini를 같이 갱신.
+- 가장 중요한 규칙: 동작하는 가장 단순한 형태를 선호하고, 분기를 더하기보다 없앤다.
+- 중첩 대신 가드절. 일찍 return/continue. if 중첩 2단 초과 금지.
+- 역할 분기는 한곳에. #ifdef ROLE_TAG 분기를 소스 곳곳에 흩지 말고, 시작 시 한 번 (startAsTag vs startAsAnchor)에 모은다.
+- 런타임 if(role)을 매 루프 돌리지 않는다.
+- 투기적 일반화 금지(YAGNI). 지금 안 쓰는 설정·콜백·옵션을 미리 넣지 않는다.
+- 블로킹 금지. loop()에서 delay()로 길게 막지 않는다. DW1000Ranging.loop()가 매 사이클 돌아야 한다.
+- 동적 할당 피하기. String 남발·new/malloc를 피하고 고정 버퍼(char buf[64] + snprintf)를 쓴다. 측정 루프에서 힙 단편화를 만들지 않는다.
+- 인터럽트 핸들러는 짧게. ISR/콜백에서 무거운 일(긴 UDP, 시리얼 출력)을 하지 않는다.
+- DW1000 설정 매직넘버는 라이브러리 상수(DW1000.CHANNEL_5 등)로 쓰고 raw 값 박지 않는다.
+
+## 네이밍 규칙 (terminology / identifiers)
+- **모델 용어는 공식 표현으로 통일.** 두 TDMA 모델은 **`synchronous TDMA`**(모든 anchor가 공유
+  deterministic schedule로 같은 tag를 frame 단위로 측정; 변종 `anchor_dw1000_synchronous` +
+  `tag_dw1000_responder`)와 **`distributed TDMA`**(anchor들이 MGM으로 slot×channel 협상; 변종
+  `anchor_dw1000_accuracy_meshagent`). `window-TDMA` / `mesh-TDMA` 같은 옛 명칭은 쓰지 않는다.
+- **시간 계층은 표준 TDMA 용어** `superframe → frame → slot`. synchronous TDMA의 per-tag 시간
+  분할은 **`frame`**(과거 `window`)이다. 코드 식별자도 frame 기준:
+  `frame_color.h`/`FrameColor`, `frame_schedule.h`/`FrameSchedule`/`FrameScheduleConfig`,
+  `numFrames`, `slotsPerFrame`, `frameIndexNow`, `FC_*` 매크로.
+  - 단, meshagent의 **`work-window`**(slot 내부 작업 구간 = `[guard | work-window | guard]`)는
+    frame이 아닌 별개 개념이므로 그대로 `window`로 둔다. `--window`(plot 표시 샘플 수)도 무관.
+- **약어 대신 의미가 드러나는 full word.** Google C++ style guide의 명료성을 따른다(`_e`→`_entries`,
+  `_n`→`_entryCount`, `rxp`→`rxPower`, `lastMs`→`lastSeenMs`). struct 필드도 명시적으로
+  (`anchor`→`anchorId`, `tag`→`tagId`). 단 관용적 루프 인덱스 `i`/`j`는 유지.
+- **member 변수 컨벤션은 기존 코드 유지**: 선행 underscore + camelCase (`_entries`, `_entryCount`).
+  지역/함수/필드는 camelCase (`anchorId`, `slotsPerFrame`).
+- 변종 이름 규칙은 위 "변종 시스템" 참고: `{role}_{chip}_{rfmode}[_{features}]`, 폴더=env=변종명 일치.
 
 ## 검증 체크리스트 (변경 후 항상)
 1. 변경된 변종의 env가 빌드되는가? `pio run -e {변종명}`
@@ -116,3 +144,6 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - harness관련 .md 파일 작성에만 한글을 사용하고 문서들과 주석을 포함한 이외에는 영어로 작성.
 - 한글 작성에서도 용어들은 영어로 작성.
 - 답변할 때도 용어들은 영어로 명시해줘.
+- 수정 작업 전에는 항상 어떻게 수정할 것인지 계획부터 보고하고 확인받고 다음 세션에서 수정.
+- 상세 설계시에는 단순한 기능구현에 집중하기 보다 오류가 일어날 가능성이 최대한 적고, 추적하기 쉽게 설계.
+- 임시적인 변수를 제외한 변수선언은 function의 시작부분에서 미리 선언하고 logic이 시작되기 전 한 줄의 공백 삽입.

@@ -22,9 +22,9 @@
  */
 
 
-// A responder hears each anchor once per superframe; with dynamic slots/windows (more anchors) the
+// A responder hears each anchor once per superframe; with dynamic slots/frames (more anchors) the
 // superframe can exceed 1 s, so keep a device alive longer. admit-on-POLL re-admits anyway, this just
-// avoids churn. Raise further if the superframe (numWindows*slotsPerWindow*slotLen) approaches this.
+// avoids churn. Raise further if the superframe (numFrames*slotsPerFrame*slotLen) approaches this.
 #define INACTIVITY_TIME 6000
 
 #ifndef _DW1000Device_H_INCLUDED
@@ -92,7 +92,7 @@ public:
 	void    noteActivity();
 	boolean isInactive();
 
-	// Per-device responder protocol state. In window-TDMA many initiators (anchors) range the same
+	// Per-device responder protocol state. In synchronous TDMA many initiators (anchors) range the same
 	// responder (tag); a single global expected-message would let one initiator's exchange clobber
 	// another's. Keeping it per distant device makes concurrent/interleaved exchanges independent.
 	// Default 0 == POLL (the first message of an exchange).

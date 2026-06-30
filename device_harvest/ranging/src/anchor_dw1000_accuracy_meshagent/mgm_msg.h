@@ -1,7 +1,7 @@
 /*
  * mgm_msg.h  (meshagent-only, pure)
  *
- * Mesh-TDMA (MGM) coordination messages exchanged between anchors over the ESP-NOW control plane:
+ * Distributed TDMA (MGM) coordination messages exchanged between anchors over the ESP-NOW control plane:
  *   VALUE   : round(2) agentId(2) slot(1) leaseExpiry(4)   = 10 B
  *   GAIN    : round(2) agentId(2) gain(2) propSlot(1)       =  8 B
  *   TAGLIST : agentId(2) count(1) ids[count](2 each)        <= 27 B

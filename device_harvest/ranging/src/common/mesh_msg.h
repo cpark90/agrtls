@@ -1,8 +1,8 @@
 /*
  * mesh_msg.h  (chip-independent, pure)
  *
- * Window-TDMA mesh message: TAGINFO — an anchor's per-tag measurements shared so every anchor builds
- * the same TagRegistry. SYNC + the byte cursors are in mesh_wire.h (shared); the mesh-TDMA MGM
+ * Synchronous TDMA mesh message: TAGINFO — an anchor's per-tag measurements shared so every anchor builds
+ * the same TagRegistry. SYNC + the byte cursors are in mesh_wire.h (shared); the distributed TDMA MGM
  * messages (VALUE/GAIN/TAGLIST/AUDIBLE) are in mgm_msg.h (the meshagent variant).
  *
  * Pure: host unit-testable.
@@ -21,7 +21,7 @@ enum : uint8_t {
 #ifndef MESH_MAX_TAGINFO
 #define MESH_MAX_TAGINFO 16        // tag measurements per TAGINFO frame
 #endif
-// Largest window message = TAGINFO: type(1) + anchorId(2) + count(1) + 7 bytes/entry.
+// Largest synchronous-TDMA message = TAGINFO: type(1) + anchorId(2) + count(1) + 7 bytes/entry.
 #define MESH_MAX_FRAME (4 + 7 * MESH_MAX_TAGINFO)
 
 // --- TAGINFO (registry share): an anchor's per-tag measurements ---

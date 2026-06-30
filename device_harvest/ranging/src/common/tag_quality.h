@@ -1,7 +1,7 @@
 /*
  * tag_quality.h  (chip-independent, pure)
  *
- * Pluggable per anchor-tag LINK quality used by the window-TDMA scheduler (docs/ARCHITECTURE_window_tdma.md).
+ * Pluggable per anchor-tag LINK quality used by the synchronous TDMA scheduler (docs/ARCHITECTURE_synchronous_tdma.md).
  * Isolated so the formula can be improved later (range / NLOS / geometry / history) without touching
  * the registry, coloring, or scheduler.
  *
@@ -43,7 +43,7 @@ inline float qualityEma(float prevQuality, float sampleQuality) {
 
 // Hysteretic eligibility: a link must be clearly above theta_link to BECOME eligible, and only drops
 // out when clearly below -> a marginal link holds its state instead of flapping (which would flip the
-// coloring and desync the window epoch). Falls back to plain linkEligible when no prior state.
+// coloring and desync the frame epoch). Falls back to plain linkEligible when no prior state.
 inline bool linkEligibleHyst(float quality, bool prevEligible) {
     return prevEligible ? (quality >= TQ_LINK_THRESH - TQ_HYSTERESIS)
                         : (quality >= TQ_LINK_THRESH + TQ_HYSTERESIS);

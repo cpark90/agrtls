@@ -43,7 +43,7 @@
 #define LEN_DATA 90
 
 //Max devices we put in the networkDevices array ! Each DW1000Device is 74 Bytes in SRAM memory for now.
-// CORE 1st scope: raised so an anchor can track many tags (~10) (mesh TDMA, docs/ARCHITECTURE_mesh_tdma.md)
+// CORE 1st scope: raised so an anchor can track many tags (~10) (mesh TDMA, docs/ARCHITECTURE_distributed_tdma.md)
 #define MAX_DEVICES 12
 
 //Default Pin for module:
@@ -59,7 +59,7 @@
 // Node role (library-internal names).
 //   TAG    = ranging initiator: sends BLINK/POLL and drives the range computation.
 //   ANCHOR = responder: only replies to the initiator's poll.
-// Note (CORE mesh-TDMA): the physical "anchor" is the INITIATOR(=TAG) and the physical "tag" is
+// Note (CORE distributed TDMA): the physical "anchor" is the INITIATOR(=TAG) and the physical "tag" is
 //   the RESPONDER(=ANCHOR) -- roles are inverted. Variant code is clearer using the
 //   startAsInitiator()/startAsResponder() aliases.
 #define TAG 0
@@ -109,11 +109,11 @@ public:
 	static void loop();            // native broadcast TWR only (anchor/tag_dw1000_accuracy)
 	// Per-model single-role loops (clean copies of loop() with no _type branching + a destination
 	// check so an overheard unicast for another node is ignored). See DW1000Ranging.cpp.
-	static void loopInitiator();   // window-TDMA initiator  (_type==TAG,    anchor_dw1000_window)
-	static void loopResponder();   // window-TDMA responder  (_type==ANCHOR, tag_dw1000_responder)
-	static void loopMeshagent();   // mesh-TDMA scheduled initiator (_type==TAG, anchor_dw1000_accuracy_meshagent)
+	static void loopInitiator();   // synchronous TDMA initiator  (_type==TAG,    anchor_dw1000_synchronous)
+	static void loopResponder();   // synchronous TDMA responder  (_type==ANCHOR, tag_dw1000_responder)
+	static void loopMeshagent();   // distributed TDMA scheduled initiator (_type==TAG, anchor_dw1000_accuracy_meshagent)
 
-	// --- scheduled single-device polling (CORE TDMA, for mesh-TDMA variants) ---
+	// --- scheduled single-device polling (CORE TDMA, for distributed TDMA variants) ---
 	// When scheduledMode is on, timerTick's auto-broadcast POLL is disabled (BLINK is kept).
 	// The app drives one-device-at-a-time polling via pollDevice() to run a slot/priority schedule.
 	// Default false -> existing variants unchanged.

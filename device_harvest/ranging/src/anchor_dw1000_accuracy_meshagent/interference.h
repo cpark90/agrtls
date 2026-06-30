@@ -25,11 +25,11 @@
 class InterferenceGraph {
 public:
     InterferenceGraph()
-        : _myId(0), _lease(3600), _thresh(-90.0f), _n(0), _myTagN(0), _idN(0) {}
+        : _myId(0), _lease(3600), _thresh(-90.0f), _entryCount(0), _myTagN(0), _idN(0) {}
 
     void begin(uint16_t myId, uint32_t leaseLenMs, float audibleThreshDbm) {
         _myId = myId; _lease = leaseLenMs; _thresh = audibleThreshDbm;
-        _n = 0; _myTagN = 0; _idN = 0;
+        _entryCount = 0; _myTagN = 0; _idN = 0;
     }
 
     void setMyTags(const uint16_t* tagIds, uint8_t n) {
@@ -42,8 +42,8 @@ public:
     // Local UWB overhearing: heard anchor id at rxp.
     void onOverheard(uint16_t id, float rxp_dBm, uint32_t nowMs) {
         if (id == _myId || rxp_dBm < _thresh) return;
-        Entry* e = entryFor(id);
-        if (e) e->lastLocalHear = stamp(nowMs);
+        Entry* entry = entryFor(id);
+        if (entry) entry->lastLocalHear = stamp(nowMs);
     }
 
     // mesh AUDIBLE: fromId reports hearing heard[]. If I am in it, fromId hears me -> neighbor.
@@ -51,8 +51,8 @@ public:
         if (fromId == _myId) return;
         for (uint8_t i = 0; i < n; i++) {
             if (heard[i] == _myId) {
-                Entry* e = entryFor(fromId);
-                if (e) e->lastReportedHearsMe = stamp(nowMs);
+                Entry* entry = entryFor(fromId);
+                if (entry) entry->lastReportedHearsMe = stamp(nowMs);
                 return;
             }
         }
@@ -64,21 +64,21 @@ public:
         for (uint8_t i = 0; i < n; i++)
             for (uint8_t j = 0; j < _myTagN; j++)
                 if (tagIds[i] == _myTag[j]) {
-                    Entry* e = entryFor(fromId);
-                    if (e) e->lastShared = stamp(nowMs);
+                    Entry* entry = entryFor(fromId);
+                    if (entry) entry->lastShared = stamp(nowMs);
                     return;
                 }
     }
 
     // Drop expired edges + refresh the neighbor id list.
     void tick(uint32_t nowMs) {
-        uint8_t k = 0;
-        for (uint8_t i = 0; i < _n; i++) {
-            if (edgeFresh(_e[i], nowMs)) { if (k != i) _e[k] = _e[i]; k++; }
+        uint8_t writeIdx = 0;
+        for (uint8_t i = 0; i < _entryCount; i++) {
+            if (edgeFresh(_entries[i], nowMs)) { if (writeIdx != i) _entries[writeIdx] = _entries[i]; writeIdx++; }
         }
-        _n = k;
+        _entryCount = writeIdx;
         _idN = 0;
-        for (uint8_t i = 0; i < _n; i++) _ids[_idN++] = _e[i].id;
+        for (uint8_t i = 0; i < _entryCount; i++) _ids[_idN++] = _entries[i].id;
     }
 
     // --- outputs ---
@@ -93,11 +93,11 @@ public:
 
     // Anchors I currently hear locally (fresh) -> publish as mesh AUDIBLE.
     uint8_t myAudibleList(uint16_t* out, uint8_t maxN, uint32_t nowMs) const {
-        uint8_t c = 0;
-        for (uint8_t i = 0; i < _n && c < maxN; i++) {
-            if (fresh(_e[i].lastLocalHear, nowMs)) out[c++] = _e[i].id;
+        uint8_t count = 0;
+        for (uint8_t i = 0; i < _entryCount && count < maxN; i++) {
+            if (fresh(_entries[i].lastLocalHear, nowMs)) out[count++] = _entries[i].id;
         }
-        return c;
+        return count;
     }
 
 private:
@@ -123,24 +123,24 @@ private:
     }
 
     int find(uint16_t id) const {
-        for (uint8_t i = 0; i < _n; i++) if (_e[i].id == id) return (int)i;
+        for (uint8_t i = 0; i < _entryCount; i++) if (_entries[i].id == id) return (int)i;
         return -1;
     }
 
     Entry* entryFor(uint16_t id) {
         int i = find(id);
-        if (i >= 0) return &_e[i];
-        if (_n >= IG_MAX_NEIGHBORS) return nullptr;
-        _e[_n] = Entry{id, 0, 0, 0};
-        return &_e[_n++];
+        if (i >= 0) return &_entries[i];
+        if (_entryCount >= IG_MAX_NEIGHBORS) return nullptr;
+        _entries[_entryCount] = Entry{id, 0, 0, 0};
+        return &_entries[_entryCount++];
     }
 
     uint16_t _myId;
     uint32_t _lease;
     float    _thresh;
 
-    Entry    _e[IG_MAX_NEIGHBORS];
-    uint8_t  _n;
+    Entry    _entries[IG_MAX_NEIGHBORS];
+    uint8_t  _entryCount;
 
     uint16_t _myTag[IG_MAX_TAGS];
     uint8_t  _myTagN;

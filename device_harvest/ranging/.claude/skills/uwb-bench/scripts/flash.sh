@@ -2,18 +2,18 @@
 # Build + upload one UWB node by role/id/port (PlatformIO; arduino-cli forbidden).
 #
 # Usage: flash.sh <role> <id> <port>
-#   role: anchor-window | responder | anchor-acc | tag-acc | anchor-mesh
+#   role: anchor-sync | responder | anchor-acc | tag-acc | anchor-mesh
 # Examples:
-#   flash.sh anchor-window 0 /dev/ttyUSB0
+#   flash.sh anchor-sync 0 /dev/ttyUSB0
 #   flash.sh responder     1 /dev/ttyUSB3
 set -euo pipefail
 
-role="${1:?role (anchor-window|responder|anchor-acc|tag-acc|anchor-mesh)}"
+role="${1:?role (anchor-sync|responder|anchor-acc|tag-acc|anchor-mesh)}"
 id="${2:?id (integer node number)}"
 port="${3:?port (e.g. /dev/ttyUSB0)}"
 
 case "$role" in
-  anchor-window) env=anchor_dw1000_window;             flag="-DANCHOR_ID=$id" ;;
+  anchor-sync) env=anchor_dw1000_synchronous;             flag="-DANCHOR_ID=$id" ;;
   responder)     env=tag_dw1000_responder;             flag="-DTAG_ID=$id" ;;
   anchor-acc)    env=anchor_dw1000_accuracy;           flag="-DANCHOR_ID=$id" ;;
   tag-acc)       env=tag_dw1000_accuracy;              flag="-DTAG_ID=$id" ;;

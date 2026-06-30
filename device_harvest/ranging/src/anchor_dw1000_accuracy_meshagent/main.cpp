@@ -5,7 +5,7 @@
  * That is, the anchor polls nearby tags (responders) one device at a time on a schedule (TWR).
  *   (role-inversion rationale: docs/DESIGN_FLOW_mesh_tdma.md Pivot 4-5)
  *
- * CORE mesh-TDMA skeleton (docs/ARCHITECTURE_mesh_tdma.md, DESIGN_P3_scope1.md):
+ * CORE distributed TDMA skeleton (docs/ARCHITECTURE_distributed_tdma.md, DESIGN_P3_scope1.md):
  *   superframe        : slot timing
  *   peer_scheduler(L4): which tag to poll inside my slot (priority, the original request)
  *   interference (L2) : interfering neighbors (UWB overhearing + shared-tag)

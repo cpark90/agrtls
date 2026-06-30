@@ -1,13 +1,13 @@
-// Host unit tests (g++, no radio/Arduino) for the window-TDMA pure modules (W-1).
+// Host unit tests (g++, no radio/Arduino) for the synchronous TDMA pure modules (W-1).
 //   build: g++ -std=c++17 -I ../../src/common test_window_modules.cpp -o tw && ./tw
-// Modules: tag_quality / tag_registry / window_color / window_frame
+// Modules: tag_quality / tag_registry / frame_color / frame_schedule
 #include <cstdio>
 #include <cmath>
 #include <cstdint>
 #include "tag_quality.h"
 #include "tag_registry.h"
-#include "window_color.h"
-#include "window_frame.h"
+#include "frame_color.h"
+#include "frame_schedule.h"
 #include "mesh_msg.h"
 
 static int g_fail = 0;
@@ -56,54 +56,54 @@ static void test_registry() {
 
 static void test_color() {
     TagRegistry r; fillRegistry(r);
-    WindowColor wc; wc.build(r, /*maxWindows*/ 8);
+    FrameColor wc; wc.build(r, /*maxFrames*/ 8);
 
-    // T0 & T2 don't conflict -> same window; T1 differs
+    // T0 & T2 don't conflict -> same frame; T1 differs
     CHECK(wc.colorOf(0) == wc.colorOf(2));
     CHECK(wc.colorOf(0) != wc.colorOf(1));
-    CHECK(wc.numWindows() == 2);
+    CHECK(wc.numFrames() == 2);
     CHECK(wc.isCandidate(3));                        // T3 weak -> candidate
     uint16_t cand[4]; uint8_t nc = wc.candidates(cand, 4);
     CHECK(nc == 1 && cand[0] == 3);
 
-    // anchor A4 ranges T1 (color of T1) and T2 (color of T2): one tag per window
+    // anchor A4 ranges T1 (color of T1) and T2 (color of T2): one tag per frame
     uint8_t wT1 = wc.colorOf(1), wT2 = wc.colorOf(2);
-    CHECK(wc.tagForWindow(r, 4, wT1) == 1);
-    CHECK(wc.tagForWindow(r, 4, wT2) == 2);
+    CHECK(wc.tagForFrame(r, 4, wT1) == 1);
+    CHECK(wc.tagForFrame(r, 4, wT2) == 2);
     // A0 only ranges T0
-    CHECK(wc.tagForWindow(r, 0, wc.colorOf(0)) == 0);
-    CHECK(wc.tagForWindow(r, 0, wT1) == WC_NONE);    // A0 has no tag in T1's window
-    printf("  windows: T0=%u T1=%u T2=%u (n=%u)\n", wc.colorOf(0), wc.colorOf(1), wc.colorOf(2), wc.numWindows());
+    CHECK(wc.tagForFrame(r, 0, wc.colorOf(0)) == 0);
+    CHECK(wc.tagForFrame(r, 0, wT1) == FC_NONE);    // A0 has no tag in T1's frame
+    printf("  frames: T0=%u T1=%u T2=%u (n=%u)\n", wc.colorOf(0), wc.colorOf(1), wc.colorOf(2), wc.numFrames());
 }
 
 static void test_color_cap() {
-    // 3 mutually-conflicting tags but only 2 windows -> lowest-priority tag becomes candidate.
+    // 3 mutually-conflicting tags but only 2 frames -> lowest-priority tag becomes candidate.
     TagRegistry r; r.begin();
     r.report(0,10,-60,1); r.report(0,11,-70,1); r.report(0,12,-80,1);   // all share anchor 0 -> clique
-    WindowColor wc; wc.build(r, /*maxWindows*/ 2);
-    CHECK(wc.numWindows() == 2);
-    // highest quality (T10) and next (T11) get windows; T12 (weakest) overflows -> candidate
+    FrameColor wc; wc.build(r, /*maxFrames*/ 2);
+    CHECK(wc.numFrames() == 2);
+    // highest quality (T10) and next (T11) get frames; T12 (weakest) overflows -> candidate
     CHECK(!wc.isCandidate(10) && !wc.isCandidate(11));
     CHECK(wc.isCandidate(12));
 }
 
 static void test_frame() {
-    WindowFrame f;
-    f.begin({2 /*windows*/, 3 /*slots*/, 100 /*slotLen*/, 10 /*guard*/});
+    FrameSchedule f;
+    f.begin({2 /*frames*/, 3 /*slots*/, 100 /*slotLen*/, 10 /*guard*/});
     CHECK(!f.isMyTurn(1000, 0, 0));        // unsynced
     f.setEpoch(1000);
-    CHECK(f.windowLenMs() == 300);
+    CHECK(f.frameLenMs() == 300);
     CHECK(f.superframeLenMs() == 600);
-    CHECK(f.windowIndexNow(1000) == 0);    // phase 0 -> window 0
+    CHECK(f.frameIndexNow(1000) == 0);    // phase 0 -> frame 0
     CHECK(f.slotIndexNow(1000) == 0);
     CHECK(!f.isWork(1000));                // leading guard
     CHECK(f.isWork(1050));                 // slot 0 work
-    CHECK(f.isMyTurn(1050, 0, 0));         // window 0, slot 0, work
+    CHECK(f.isMyTurn(1050, 0, 0));         // frame 0, slot 0, work
     CHECK(f.slotIndexNow(1150) == 1);      // phase 150 -> slot 1
     CHECK(f.isMyTurn(1150, 0, 1));
-    CHECK(f.windowIndexNow(1350) == 1);    // phase 350 -> window 1, slot 0
+    CHECK(f.frameIndexNow(1350) == 1);    // phase 350 -> frame 1, slot 0
     CHECK(f.isMyTurn(1350, 1, 0));
-    CHECK(f.windowIndexNow(1600) == 0);    // wrap (1000 + 600)
+    CHECK(f.frameIndexNow(1600) == 0);    // wrap (1000 + 600)
 }
 
 // W-2: TAGINFO message (registry share over the mesh)
@@ -171,7 +171,7 @@ int main() {
     test_frame();
     test_taginfo();
     test_aging_slots();
-    if (g_fail == 0) printf("ALL WINDOW TESTS PASSED\n");
+    if (g_fail == 0) printf("ALL FRAME TESTS PASSED\n");
     else             printf("%d CHECK(S) FAILED\n", g_fail);
     return g_fail ? 1 : 0;
 }

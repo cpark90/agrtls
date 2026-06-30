@@ -5,13 +5,13 @@ description: >
   Use for the Makerfabs ESP32 UWB (DW1000) ranging firmware whenever you need to
   flash an anchor/tag/responder to a /dev/ttyUSB* port, capture serial without an
   interactive TTY (pio device monitor fails headless), tally per-device ranges to
-  check clustering / link quality, or run the host unit tests. Multi-node window-TDMA
-  validation (anchor_dw1000_window + tag_dw1000_responder).
+  check clustering / link quality, or run the host unit tests. Multi-node synchronous TDMA
+  validation (anchor_dw1000_synchronous + tag_dw1000_responder).
 ---
 
 # uwb-bench
 
-Frequently-used commands for developing and validating the window-TDMA UWB firmware.
+Frequently-used commands for developing and validating the synchronous TDMA UWB firmware.
 All paths are relative to this skill dir (`.claude/skills/uwb-bench/`); the scripts
 locate the project root (the dir with `platformio.ini`) themselves.
 
@@ -19,7 +19,7 @@ locate the project root (the dir with `platformio.ini`) themselves.
 
 | port | node |
 |------|------|
-| /dev/ttyUSB0 | anchor A0 (`anchor_dw1000_window`, `-DANCHOR_ID=0`) |
+| /dev/ttyUSB0 | anchor A0 (`anchor_dw1000_synchronous`, `-DANCHOR_ID=0`) |
 | /dev/ttyUSB1 | anchor A1 (`-DANCHOR_ID=1`) |
 | /dev/ttyUSB2 | tag T0 (`tag_dw1000_responder`, `-DTAG_ID=0`) |
 | /dev/ttyUSB3 | tag T1 (`-DTAG_ID=1`) |
@@ -27,12 +27,12 @@ locate the project root (the dir with `platformio.ini`) themselves.
 ## Flash a node
 
 ```bash
-scripts/flash.sh anchor-window 0 /dev/ttyUSB0   # A0
-scripts/flash.sh anchor-window 1 /dev/ttyUSB1   # A1
+scripts/flash.sh anchor-sync 0 /dev/ttyUSB0   # A0
+scripts/flash.sh anchor-sync 1 /dev/ttyUSB1   # A1
 scripts/flash.sh responder     0 /dev/ttyUSB2   # T0
 scripts/flash.sh responder     1 /dev/ttyUSB3   # T1
 ```
-roles: `anchor-window | responder | anchor-acc | tag-acc | anchor-mesh`.
+roles: `anchor-sync | responder | anchor-acc | tag-acc | anchor-mesh`.
 Injects `-DANCHOR_ID`/`-DTAG_ID` via `PLATFORMIO_BUILD_FLAGS` and uploads to the port.
 
 ## Read serial (headless)
@@ -62,7 +62,7 @@ g++ -std=c++17 -I src/common tools/host_test/test_window_modules.cpp -o /tmp/tw 
 g++ -std=c++17 -I src/common tools/host_test/test_p3_modules.cpp    -o /tmp/tp && /tmp/tp
 ```
 
-## What to look for (window-TDMA validation)
+## What to look for (synchronous TDMA validation)
 
 - Anchor status line: `# A{id} win=k/n disc= ranges= sched: T0=0 T1=c` — `sched:` must
   **match across anchors** (shared registry -> same coloring); `c` = candidate (far/weak).

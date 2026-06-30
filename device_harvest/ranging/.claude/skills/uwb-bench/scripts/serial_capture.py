@@ -12,7 +12,7 @@ Examples:
   python3 serial_capture.py /dev/ttyUSB2 -d 16
 
 Note: opening the port toggles DTR, so the ESP32 resets. Allow a few seconds for
-discovery / window-color convergence before reading steady-state lines.
+discovery / frame-color convergence before reading steady-state lines.
 """
 import argparse
 import re

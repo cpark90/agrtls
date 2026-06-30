@@ -22,7 +22,7 @@ name, and the variant name are always identical.
 |---|---|---|---|---|---|
 | `anchor_dw1000_accuracy` | anchor | DW1000 | accuracy | native | Native anchor = **responder**. Address: `-D ANCHOR_ID=n` |
 | `tag_dw1000_accuracy` | tag | DW1000 | accuracy | native | Native tag = **initiator** (broadcast POLL). Address: `-D TAG_ID=n` |
-| `anchor_dw1000_window` | anchor | DW1000 | accuracy | synchronous TDMA | **Current** anchor = initiator: shared registry → frame coloring → poll the frame's tag. `-D ANCHOR_ID=n` |
+| `anchor_dw1000_synchronous` | anchor | DW1000 | accuracy | synchronous TDMA | **Current** anchor = initiator: shared registry → frame coloring → poll the frame's tag. `-D ANCHOR_ID=n` |
 | `tag_dw1000_responder` | tag | DW1000 | accuracy | frame/distributed TDMA | Mobile tag = **responder** (replies only). Shared by both TDMA models. `-D TAG_ID=n` |
 | `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | distributed TDMA | Anchor = initiator that schedule-polls its own tags; MGM slot negotiation. Self-contained variant. `-D ANCHOR_ID=n` |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 anchor (skeleton) |
@@ -108,7 +108,7 @@ Shared, chip-independent (`src/common/`):
 - `mesh_link.h` — ESP-NOW control-plane transport (generic byte frame, `MESH_LINK_MAX_FRAME`)
 - `mesh_wire.h` — shared wire utils: little-endian cursors + `meshMsgType` + `SYNC` (both TDMA models)
 - `mesh_msg.h` — **synchronous TDMA** message: `TAGINFO` (shared-registry exchange)
-- `tag_registry.h` / `tag_quality.h` / `window_color.h` / `window_frame.h` — synchronous TDMA scheduling
+- `tag_registry.h` / `tag_quality.h` / `frame_color.h` / `frame_schedule.h` — synchronous TDMA scheduling
 
 Per-variant (self-contained), in `src/anchor_dw1000_accuracy_meshagent/`:
 

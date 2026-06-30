@@ -6,7 +6,7 @@
  * broadcasts POLL to the anchors and obtains its ranges. Pairs with anchor_dw1000_accuracy. Uses the
  * library as-is. Broadcast TWR -> up to ~4 anchors (RANGE frame limit).
  *
- * Note: roles are the OPPOSITE of the mesh-TDMA variants (tag_dw1000_responder is a responder).
+ * Note: roles are the OPPOSITE of the distributed TDMA variants (tag_dw1000_responder is a responder).
  * See docs/VARIANTS.md.
  */
 #include <Arduino.h>

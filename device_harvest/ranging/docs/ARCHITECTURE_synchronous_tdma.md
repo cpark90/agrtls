@@ -8,9 +8,9 @@ tag, all of its anchor ranges must be **temporally clustered** so they can be us
 position fix. This supersedes the earlier anchor-centric model in
 [ARCHITECTURE_distributed_tdma.md](ARCHITECTURE_distributed_tdma.md) (kept as history).
 
-> **Naming note:** the per-tag time division is called a **frame** here (standard TDMA term:
-> superframe → frame → slot). In the firmware this layer keeps its original identifiers — `window_*`
-> (`window_color.h`, `window_frame.h`, `WindowFrameConfig`, `numWindows`, `slotsPerWindow`).
+> **Note:** in this doc the per-tag time division is a **frame** (standard TDMA hierarchy
+> superframe → frame → slot). The firmware implements it in `frame_color.h` (tag→frame coloring,
+> `FrameColor`) and `frame_schedule.h` (`FrameSchedule` timing: `numFrames`, `slotsPerFrame`).
 
 ---
 
@@ -37,7 +37,7 @@ Two tags that cannot hear each other but share an anchor will collide at that an
 ## 3. Structure — frame-based two-level TDMA
 
 ```
-Superframe = a sequence of WINDOWS (one tag each), repeating.
+Superframe = a sequence of FRAMES (one tag each), repeating.
    schedule:  frame 0 -> T_a,  frame 1 -> T_b,  frame 2 -> T_a, ...   (far/weak tags appear less)
 
 Frame(T_x) = a sequence of ANCHOR-SLOTS:
@@ -132,9 +132,9 @@ There is **no tag mesh** (tags can't reliably talk — R7). All coordination is 
 
 - **W-1**: pure modules (host-testable):
   - `tag_registry.h` — merge per-anchor `(tagId, rxp, range)` reports; expose each tag's **effective** anchors (links passing `θ_link`) and the **effective shared** anchor set of any tag pair.
-  - `window_color.h` conflict = two tags share an **effective** anchor (§4.1).
+  - `frame_color.h` conflict = two tags share an **effective** anchor (§4.1).
   - `tag_quality.h` — pluggable `linkQuality(rxp, range)` (first-cut: `= rxp`); anchor selection by `θ_link`; `W̄_S` (mean, count-normalized) comparison of two tags over their shared anchors.
-  - `window_color.h` — distributed tag→frame coloring (conflict = share-anchor), weighted by `W_S` (far/weak → fewer frames); candidate-only frames + `K_probe` anti-starvation; `tagForWindow(k)`.
+  - `frame_color.h` — distributed tag→frame coloring (conflict = share-anchor), weighted by `W_S` (far/weak → fewer frames); candidate-only frames + `K_probe` anti-starvation; `tagForFrame(k)`.
   - extend `superframe.h` with the frame / anchor-slot two-level timing.
 - **W-2**: mesh `TAGINFO` message (tagId + RXP) in `mesh_msg.h`; share/merge over ESP-NOW.
 - **W-3**: meshagent rework — poll `T_k` (shared) instead of own tags; anchor-slot offset within frame.
@@ -144,10 +144,10 @@ There is **no tag mesh** (tags can't reliably talk — R7). All coordination is 
 
 frameLen, anchor-slot length, superframe/schedule length `L`, link-quality `linkQuality` (RXP/range→quality), anchor-selection threshold `θ_link`, candidate probe rate `K_probe`, registry update/rate-limit period, epoch-sync period.
 
-Implemented tunables (§11.5): `slotLen`/guard (`WindowFrameConfig`), `MAX_SLOTS_PER_WINDOW` (slot cap),
-`WC_MAX_WINDOWS` (active-frame cap), `TR_ENTRY_TTL_MS` (entry aging), responder `INACTIVITY_TIME`
-(≥ superframe), `TQ_LINK_THRESH` / `TQ_HYSTERESIS` / `TQ_EMA_ALPHA` (link quality). `numWindows` and
-`slotsPerWindow` are derived dynamically from the shared registry.
+Implemented tunables (§11.5): `slotLen`/guard (`FrameScheduleConfig`), `MAX_SLOTS_PER_FRAME` (slot cap),
+`FC_MAX_FRAMES` (active-frame cap), `TR_ENTRY_TTL_MS` (entry aging), responder `INACTIVITY_TIME`
+(≥ superframe), `TQ_LINK_THRESH` / `TQ_HYSTERESIS` / `TQ_EMA_ALPHA` (link quality). `numFrames` and
+`slotsPerFrame` are derived dynamically from the shared registry.
 
 ## 11. Responder layer & hardware validation (implemented)
 
@@ -175,15 +175,15 @@ Under role inversion the physical tag is the responder. For several anchors to r
   (e.g. another anchor's `POLL_ACK`/`RANGE_REPORT`) is ignored, so an anchor never logs another
   anchor's measurement as its own.
 
-### 11.2 Anchor polling / frames (`anchor_dw1000_window`)
-- **dynamic frame count**: the frame cycles `activeW = wc.numWindows()` active frames **+ one
+### 11.2 Anchor polling / frames (`anchor_dw1000_synchronous`)
+- **dynamic frame count**: the frame cycles `activeW = wc.numFrames()` active frames **+ one
   trailing probe frame**, never empty frames. The probe frame is always present so the per-anchor
   superframe length (`activeW+1`) is shared-deterministic → epoch sync stays aligned.
 - **probe / bootstrap target** = a discovered tag this anchor is **not yet effective** for (covers
   bootstrap = never-measured, global candidates, weak-link reprobe). Without it an anchor could never
-  start ranging an active tag it hadn't measured (it isn't in `tagForWindow` until effective → deadlock).
+  start ranging an active tag it hadn't measured (it isn't in `tagForFrame` until effective → deadlock).
 - **one poll per slot**: no greedy re-poll, so an exchange never spills past the slot edge. (Anchor-slot
-  assignment and dynamic `slotsPerWindow`: §11.5.)
+  assignment and dynamic `slotsPerFrame`: §11.5.)
 - **no fake -120 timeout report**: a single transient timeout must not overwrite a good link and flip
   the tag to candidate (which would desync coloring/epoch).
 
@@ -218,9 +218,9 @@ from diverging across anchors:
   same tag get distinct slots → collision-free, computed deterministically from the shared registry
   (like the frame coloring), so **no MGM negotiation is needed** (MGM is only needed if the
   shared-registry assumption is dropped).
-- **dynamic `slotsPerWindow`** = max effective anchors over any tag (`maxEffectiveAnchorCount`,
-  `WindowFrame::setSlotsPerWindow`, capped by `MAX_SLOTS_PER_WINDOW`) → exactly enough slots, no waste.
-- **inactivity timeout**: the superframe (`numWindows·slotsPerWindow·slotLen`) can exceed 1 s as anchors
+- **dynamic `slotsPerFrame`** = max effective anchors over any tag (`maxEffectiveAnchorCount`,
+  `FrameSchedule::setSlotsPerFrame`, capped by `MAX_SLOTS_PER_FRAME`) → exactly enough slots, no waste.
+- **inactivity timeout**: the superframe (`numFrames·slotsPerFrame·slotLen`) can exceed 1 s as anchors
   grow, so the responder `INACTIVITY_TIME` was raised 1000→6000 ms (admit-on-POLL is the backstop);
   raise further if the superframe approaches it.
 - **registry entry aging**: per-link `lastMs` + `TagRegistry::expire(now, TR_ENTRY_TTL_MS=5000)` drops

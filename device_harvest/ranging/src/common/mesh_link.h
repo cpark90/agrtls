@@ -28,7 +28,7 @@
 #define MESH_WIFI_CHANNEL 1
 #endif
 // Generic transport frame size (independent of the message set). Must hold the largest message any
-// variant sends/receives over the shared channel (window TAGINFO is the biggest at ~116 B).
+// variant sends/receives over the shared channel (the synchronous-TDMA TAGINFO is the biggest at ~116 B).
 #ifndef MESH_LINK_MAX_FRAME
 #define MESH_LINK_MAX_FRAME 128
 #endif

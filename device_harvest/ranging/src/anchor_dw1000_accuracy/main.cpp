@@ -6,7 +6,7 @@
  * and pairs with tag_dw1000_accuracy (the initiator that broadcasts POLL). Uses the library as-is
  * (scheduledMode stays off). Up to ~4 anchors per tag (broadcast RANGE frame limit).
  *
- * Note: roles are the OPPOSITE of the mesh-TDMA variants, where the physical anchor is the initiator
+ * Note: roles are the OPPOSITE of the distributed TDMA variants, where the physical anchor is the initiator
  * (anchor_dw1000_accuracy_meshagent). See docs/VARIANTS.md.
  */
 #include <Arduino.h>

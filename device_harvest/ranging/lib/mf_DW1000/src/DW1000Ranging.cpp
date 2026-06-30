@@ -275,8 +275,8 @@ boolean DW1000RangingClass::addNetworkDevices(DW1000Device* device) {
 	}
 	
 	if(addDevice) {
-		// Window-TDMA needs a responder (_type==ANCHOR) to hold MANY initiators (anchors) at once so
-		// several anchors can range the same tag within one window -> the tag's ranges are clustered
+		// Synchronous TDMA needs a responder (_type==ANCHOR) to hold MANY initiators (anchors) at once so
+		// several anchors can range the same tag within one frame -> the tag's ranges are clustered
 		// in time (required for localization). The original demo reset to a single device here
 		// ("1 TAG"); we instead accumulate up to MAX_DEVICES. Each device carries its own protocol
 		// state (DW1000Device::_expectedMsgId/_protocolFailed), so interleaved exchanges from
@@ -717,10 +717,10 @@ void DW1000RangingClass::loop() {
 }
 
 // ###########################################################################
-// Role-split loops (window-TDMA). loop() above is the stock-style shared loop
+// Role-split loops (synchronous TDMA). loop() above is the stock-style shared loop
 // kept for the native + meshagent variants. loopInitiator()/loopResponder() are
-// clean single-role copies (no _type branching) used by the window-TDMA variants
-// (anchor_dw1000_window -> initiator, tag_dw1000_responder -> responder), plus a
+// clean single-role copies (no _type branching) used by the synchronous TDMA variants
+// (anchor_dw1000_synchronous -> initiator, tag_dw1000_responder -> responder), plus a
 // destination check so a unicast frame addressed to ANOTHER node (e.g. another
 // anchor's POLL_ACK/RANGE_REPORT overheard) is not mis-processed.
 // ###########################################################################
@@ -926,8 +926,8 @@ void DW1000RangingClass::loopResponder() {
 	}
 }
 
-// Meshagent loop (mf-DW1000 _type==TAG, scheduledMode): the mesh-TDMA anchor that polls one tag at a
-// time via pollDevice(). A dedicated single-role loop kept separate from the window initiator so the
+// Meshagent loop (mf-DW1000 _type==TAG, scheduledMode): the distributed TDMA anchor that polls one tag at a
+// time via pollDevice(). A dedicated single-role loop kept separate from the synchronous-TDMA initiator so the
 // meshagent variant is self-contained; loop() above is now native(broadcast)-only. Includes the
 // destination check (overheard unicast for another anchor is ignored).
 void DW1000RangingClass::loopMeshagent() {
