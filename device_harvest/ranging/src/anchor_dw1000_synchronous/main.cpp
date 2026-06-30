@@ -64,12 +64,39 @@ static uint8_t  activeW = 0;   // number of active (localization) frames = wc.nu
 
 static uint16_t pollTarget  = FC_NONE;
 static uint32_t pollStartMs = 0;
-static uint32_t lastPolledSlot = 0xFFFFFFFF;   // last slot instance we already polled in (one poll/slot)
+static uint16_t curSlotKey = 0xFFFF;   // slot we currently occupy = (frameIdx<<8 | slotIdx); epoch-robust (phase-relative)
+static bool     polledHere = false;    // already fired a poll in curSlotKey? (one poll per slot occurrence)
 static uint32_t lastPublish = 0, lastRecolor = 0;
 
 static void rememberDiscovered(uint16_t tag) {
     for (uint8_t i = 0; i < discN; i++) if (disc[i] == tag) return;
     if (discN < MY_MEAS_MAX) disc[discN++] = tag;
+}
+
+// Known anchors (learned from SYNC fromId + self). A candidate/probe tag is NOT effective for anyone
+// (effA=0 -> slotsPerFrame collapses to 1), so without this every anchor would probe in slot 0 and
+// collide -> the lowest-id anchor wins, the rest starve, and the colliding POLLs corrupt the tag's
+// leading-edge timestamp (negative ranges). Giving each anchor a distinct probe slot removes both.
+static uint16_t knownAnchors[FC_MAX_TAGS];
+static uint8_t  knownAnchorN = 0;
+static void noteAnchor(uint16_t id) {
+    for (uint8_t i = 0; i < knownAnchorN; i++) if (knownAnchors[i] == id) return;
+    if (knownAnchorN < FC_MAX_TAGS) knownAnchors[knownAnchorN++] = id;
+}
+static uint8_t myAnchorSlot() {   // rank of SELF among known anchors (sorted by id) -> distinct probe slot
+    uint8_t rank = 0;
+    for (uint8_t i = 0; i < knownAnchorN; i++) if (knownAnchors[i] < SELF_SHORT) rank++;
+    return rank;
+}
+// The epoch master = lowest-id EFFECTIVE anchor (so timing is driven by a participant in the active
+// cluster, not a weak lowest-id node). Everyone aligns to its SYNC; the master itself never adjusts.
+// If no anchor is effective yet (bootstrap), fall back to the lowest known anchor.
+static uint16_t epochMaster() {
+    uint16_t m = reg.lowestEffectiveAnchor();
+    if (m != 0xFFFF) return m;
+    uint16_t lo = SELF_SHORT;
+    for (uint8_t i = 0; i < knownAnchorN; i++) if (knownAnchors[i] < lo) lo = knownAnchors[i];
+    return lo;
 }
 
 // ---- UWB callbacks ----
@@ -86,6 +113,23 @@ void newRange() {
 }
 void newDevice(DW1000Device* d)      { rememberDiscovered(d->getShortAddress()); }
 void inactiveDevice(DW1000Device* d) { /* keep in registry; coloring/candidate handles it */ (void)d; }
+// Overheard the tag's reply (POLL_ACK/RANGE_REPORT to the probing master): measure rxp only, no DS-TWR.
+// Lets an ineffective anchor learn its tag link (effectivity) WITHOUT transmitting -> the probe slot
+// has a single transmitter (the master), so no collision (-> no negative ranges / starvation).
+void overheard(uint16_t srcId, float rxp) {
+    uint8_t lo = (uint8_t)(srcId & 0xFF);
+    if (lo < 0x80 || lo >= 0xC0) return;                  // tag sources only (0x80..0xBF)
+    rememberDiscovered(srcId);
+    reg.report(SELF_SHORT, srcId, rxp, 0.0f, millis());   // range unknown -> 0 (first-cut quality = rxp)
+    // Overhearing makes the tag eligible (registry) but NOT pollable: without a DW1000 device-list
+    // entry, searchDistantDevice() returns null and this anchor's slot comes up with nothing to poll
+    // (-> starves despite being "effective"). Register it so it can actually be polled once effective.
+    byte sa[2] = { (byte)(srcId & 0xFF), (byte)((srcId >> 8) & 0xFF) };
+    if (DW1000Ranging.searchDistantDevice(sa) == nullptr) {
+        DW1000Device tagDev(sa, true);
+        DW1000Ranging.addNetworkDevices(&tagDev, true);
+    }
+}
 
 // ---- mesh ----
 static void meshPump(uint32_t now) {
@@ -103,8 +147,12 @@ static void meshPump(uint32_t now) {
         }
         case MESH_SYNC: {
             uint16_t fromId; uint32_t phase;
-            if (unpackSync(fr.data, fr.len, fromId, phase) && fromId < SELF_SHORT)
-                wf.setEpoch(now - phase);   // align my frames to the lowest-id anchor
+            if (unpackSync(fr.data, fr.len, fromId, phase)) {
+                noteAnchor(fromId);             // learn the anchor set (for distinct probe slots)
+                uint16_t master = epochMaster();
+                if (fromId == master && master != SELF_SHORT)   // align ONLY to the epoch master (lowest EFFECTIVE anchor)
+                    wf.setEpoch(now - phase);   // align my frames to the epoch master
+            }
             break;
         }
         }
@@ -131,12 +179,14 @@ void setup() {
 
     reg.begin();
     wf.begin(WF_CFG);
+    noteAnchor(SELF_SHORT);   // self is a known anchor (probe-slot rank baseline)
 
     SPI.begin(PIN_SCK, PIN_MISO, PIN_MOSI);
     DW1000Ranging.initCommunication(PIN_RST, PIN_SS, PIN_IRQ);
     DW1000Ranging.attachNewRange(newRange);
     DW1000Ranging.attachNewDevice(newDevice);
     DW1000Ranging.attachInactiveDevice(inactiveDevice);
+    DW1000Ranging.attachOverheard(overheard);   // ineffective anchors learn effectivity by listening
     DW1000Ranging.setScheduledMode(true);
     DW1000Ranging.startAsInitiator(selfAddr, RF_MODE, false);
     applyRfConfigDW1000();
@@ -188,15 +238,20 @@ void loop() {
     //    = my rank among them (collision-free, every anchor of the tag gets a distinct slot).
     //  - probe frame: best-effort, id-based slot (clustering not required for probes).
     // (one poll/slot: a greedy re-poll would spill the exchange past the slot edge into the next slot.)
-    if (pollTarget == FC_NONE && wf.isWork(now) && wf.slotNumber(now) != lastPolledSlot) {
-        uint8_t  k       = wf.frameIndexNow(now);
-        uint8_t  curSlot = wf.slotIndexNow(now);
+    // The "one poll per slot occurrence" latch is keyed on (frameIdx,slotIdx) -- phase-relative, so it
+    // survives epoch resync (setEpoch keeps phase continuous); entering a new slot clears the latch. This
+    // replaces the old slotNumber key, which reset on every setEpoch and spuriously blocked resync anchors.
+    uint8_t  k       = wf.frameIndexNow(now);
+    uint8_t  curSlot = wf.slotIndexNow(now);
+    uint16_t slotKey = ((uint16_t)k << 8) | curSlot;
+    if (slotKey != curSlotKey) { curSlotKey = slotKey; polledHere = false; }   // new slot occupancy -> fresh poll
+    if (pollTarget == FC_NONE && wf.isWork(now) && !polledHere) {
         uint16_t target  = FC_NONE;
         if (k < activeW) {
             uint16_t t = wc.tagForFrame(reg, SELF_SHORT, k);          // the tag I effectively range
             if (t != FC_NONE && reg.anchorRank(t, SELF_SHORT) == curSlot) target = t;
-        } else if (probeN > 0 && (uint8_t)((ANCHOR_ID) % wf.slotsPerFrame()) == curSlot) {
-            target = probeList[probeIdx % probeN];                     // trailing probe: re-admit/bootstrap
+        } else if (probeN > 0 && myAnchorSlot() == 0 && curSlot == 0) {  // ONLY the epoch master probes (single TX); others overhear the tag's reply for rxp
+            target = probeList[probeIdx % probeN];
             probeIdx++;
         }
         if (target != FC_NONE) {
@@ -205,9 +260,8 @@ void loop() {
             if (d != nullptr) {
                 DW1000Ranging.pollDevice(d);
                 pollTarget = target; pollStartMs = now;
-                lastPolledSlot = wf.slotNumber(now);          // consume this slot's single poll
+                polledHere = true;                            // consume this slot occurrence's single poll
             }
         }
     }
-
 }

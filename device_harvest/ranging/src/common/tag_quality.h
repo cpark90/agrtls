@@ -16,10 +16,10 @@
 #define TQ_LINK_THRESH (-85.0f)   // theta_link, in linkQuality units (dBm for the first-cut)
 #endif
 #ifndef TQ_EMA_ALPHA
-#define TQ_EMA_ALPHA (0.3f)       // RXP smoothing weight (0..1); lower = smoother / slower to react
+#define TQ_EMA_ALPHA (0.8f)       // RXP smoothing weight (0..1); lower = smoother / slower to react
 #endif
 #ifndef TQ_HYSTERESIS
-#define TQ_HYSTERESIS (3.0f)      // dB band around theta_link; stops eligibility flapping on a link
+#define TQ_HYSTERESIS (2.0f)      // dB band around theta_link; stops eligibility flapping on a link
 #endif                            // sitting near the threshold (multipath variance).
 
 // First-cut: quality = RXP. Range is accepted for future use (kept out of the first-cut formula).

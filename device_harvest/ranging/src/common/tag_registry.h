@@ -159,6 +159,15 @@ public:
         return maxCount;
     }
 
+    // Lowest-id anchor that holds ANY eligible link = the cluster's epoch master (timing is driven by a
+    // participating/effective anchor, not a weak lowest-id node). 0xFFFF if no anchor is eligible yet.
+    uint16_t lowestEffectiveAnchor() const {
+        uint16_t lo = 0xFFFF;
+        for (uint8_t i = 0; i < _entryCount; i++)
+            if (_entries[i].eligible && _entries[i].anchorId < lo) lo = _entries[i].anchorId;
+        return lo;
+    }
+
     // Two tags conflict iff some anchor ranges both effectively.
     bool conflict(uint16_t tagA, uint16_t tagB) const {
         for (uint8_t i = 0; i < _entryCount; i++) {
