@@ -38,7 +38,6 @@ DW1000Device DW1000RangingClass::_networkDevices[MAX_DEVICES];
 byte         DW1000RangingClass::_currentAddress[8];
 byte         DW1000RangingClass::_currentShortAddress[2];
 byte         DW1000RangingClass::_lastSentToShortAddress[2];
-byte         DW1000RangingClass::_lastPollAckShortAddress[2];
 volatile uint8_t DW1000RangingClass::_networkDevicesNumber = 0; // TODO short, 8bit?
 int16_t      DW1000RangingClass::_lastDistantDevice    = 0; // TODO short, 8bit?
 DW1000Mac    DW1000RangingClass::_globalMac;
@@ -405,18 +404,8 @@ void DW1000RangingClass::loop() {
 			return;
 		
 		//A msg was sent. We launch the ranging protocole when a message was sent
-		if(_type == ANCHOR) {
-			if(messageType == POLL_ACK) {
-				// attribute via the dedicated POLL_ACK target (not the shared _lastSentToShortAddress,
-				// which a transmitRangeReport/RangingInit in between could have overwritten)
-				DW1000Device* myDistantDevice = searchDistantDevice(_lastPollAckShortAddress);
-
-				if (myDistantDevice) {
-					DW1000.getTransmitTimestamp(myDistantDevice->timePollAckSent);
-				}
-			}
-		}
-		else if(_type == TAG) {
+		// POLL_ACK send time (ANCHOR) is now captured synchronously in transmitPollAck().
+		if(_type == TAG) {
 			if(messageType == POLL) {
 				DW1000Time timePollSent;
 				DW1000.getTransmitTimestamp(timePollSent);
@@ -468,7 +457,8 @@ void DW1000RangingClass::loop() {
 		//we read the datas from the modules:
 		// get message and parse
 		DW1000.getData(data, LEN_DATA);
-		
+		DW1000Time rxTimestamp; DW1000.getReceiveTimestamp(rxTimestamp);   // latch atomically with the frame data (before any processing)
+
 		int messageType = detectMessageType(data);
 		
 		//we have just received a BLINK message from tag
@@ -581,7 +571,7 @@ void DW1000RangingClass::loop() {
 							// on POLL we (re-)start, so no protocol failure (per device)
 							myDistantDevice->setProtocolFailed(false);
 
-							DW1000.getReceiveTimestamp(myDistantDevice->timePollReceived);
+							myDistantDevice->timePollReceived = rxTimestamp;
 							//we note activity for our device:
 							myDistantDevice->noteActivity();
 							//we indicate our next receive message for our ranging protocole (per device)
@@ -612,7 +602,7 @@ void DW1000RangingClass::loop() {
 						//we test if the short address is our address
 						if(shortAddress[0] == _currentShortAddress[0] && shortAddress[1] == _currentShortAddress[1]) {
 							//we grab the replytime wich is for us
-							DW1000.getReceiveTimestamp(myDistantDevice->timeRangeReceived);
+							myDistantDevice->timeRangeReceived = rxTimestamp;
 							noteActivity();
 							myDistantDevice->setExpectedMsg(POLL);
 
@@ -670,7 +660,7 @@ void DW1000RangingClass::loop() {
 					return;
 				}
 				if(messageType == POLL_ACK) {
-					DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+					myDistantDevice->timePollAckReceived = rxTimestamp;
 					myDistantDevice->setPollAckFresh(true);   // this device's timePollAckReceived is current
 					//we note activity for our device:
 					myDistantDevice->noteActivity();
@@ -771,6 +761,7 @@ void DW1000RangingClass::loopInitiator() {
 	if(_receivedAck) {
 		_receivedAck = false;
 		DW1000.getData(data, LEN_DATA);
+		DW1000Time rxTimestamp; DW1000.getReceiveTimestamp(rxTimestamp);   // latch atomically with the frame data (before any processing)
 		int messageType = detectMessageType(data);
 
 		if(messageType == RANGING_INIT) {
@@ -788,11 +779,15 @@ void DW1000RangingClass::loopInitiator() {
 					(*_handleOverheard)((uint16_t)address[1]*256 + address[0], DW1000.getReceivePower());
 				return;
 			}
-			if(!frameForMe(data)) return;   // unicast for another anchor (overheard) -> ignore
+			if(!frameForMe(data)) {   // overheard (addressed to another node): expose rxp, then ignore
+				if(_handleOverheard != 0)
+					(*_handleOverheard)((uint16_t)address[1]*256 + address[0], DW1000.getReceivePower());
+				return;
+			}
 
 			if(messageType != _expectedMsgId) return;
 			if(messageType == POLL_ACK) {
-				DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+				myDistantDevice->timePollAckReceived = rxTimestamp;
 				myDistantDevice->setPollAckFresh(true);   // this device's timePollAckReceived is current
 				myDistantDevice->noteActivity();
 				if(_scheduledMode) {
@@ -826,19 +821,12 @@ void DW1000RangingClass::loopResponder() {
 	uint32_t time = millis();
 	if(time - timer > _timerDelay) { timer = time; timerTick(); }
 
-	if(_sentAck) {
-		_sentAck = false;
-		int messageType = detectMessageType(data);
-		if(messageType == POLL_ACK) {
-			// dedicated POLL_ACK target (not the shared _lastSentToShortAddress)
-			DW1000Device* d = searchDistantDevice(_lastPollAckShortAddress);
-			if(d) DW1000.getTransmitTimestamp(d->timePollAckSent);
-		}
-	}
+	if(_sentAck) _sentAck = false;   // POLL_ACK send time is captured synchronously in transmitPollAck()
 
 	if(_receivedAck) {
 		_receivedAck = false;
 		DW1000.getData(data, LEN_DATA);
+		DW1000Time rxTimestamp; DW1000.getReceiveTimestamp(rxTimestamp);   // latch atomically with the frame data (before any processing)
 		int messageType = detectMessageType(data);
 
 		if(messageType == BLINK) {
@@ -889,7 +877,7 @@ void DW1000RangingClass::loopResponder() {
 						uint16_t replyTime; memcpy(&replyTime, data+SHORT_MAC_LEN+2+i*4+2, 2);
 						_replyDelayTimeUS = replyTime;
 						myDistantDevice->setProtocolFailed(false);
-						DW1000.getReceiveTimestamp(myDistantDevice->timePollReceived);
+						myDistantDevice->timePollReceived = rxTimestamp;
 						myDistantDevice->noteActivity();
 						myDistantDevice->setExpectedMsg(RANGE);
 						transmitPollAck(myDistantDevice);
@@ -903,7 +891,7 @@ void DW1000RangingClass::loopResponder() {
 				for(uint8_t i = 0; i < numberDevices; i++) {
 					byte shortAddress[2]; memcpy(shortAddress, data+SHORT_MAC_LEN+2+i*17, 2);
 					if(shortAddress[0] == _currentShortAddress[0] && shortAddress[1] == _currentShortAddress[1]) {
-						DW1000.getReceiveTimestamp(myDistantDevice->timeRangeReceived);
+						myDistantDevice->timeRangeReceived = rxTimestamp;
 						noteActivity();
 						myDistantDevice->setExpectedMsg(POLL);
 						if(!myDistantDevice->getProtocolFailed()) {
@@ -959,6 +947,7 @@ void DW1000RangingClass::loopMeshagent() {
 	if(_receivedAck) {
 		_receivedAck = false;
 		DW1000.getData(data, LEN_DATA);
+		DW1000Time rxTimestamp; DW1000.getReceiveTimestamp(rxTimestamp);   // latch atomically with the frame data (before any processing)
 		int messageType = detectMessageType(data);
 
 		if(messageType == RANGING_INIT) {
@@ -980,7 +969,7 @@ void DW1000RangingClass::loopMeshagent() {
 
 			if(messageType != _expectedMsgId) return;
 			if(messageType == POLL_ACK) {
-				DW1000.getReceiveTimestamp(myDistantDevice->timePollAckReceived);
+				myDistantDevice->timePollAckReceived = rxTimestamp;
 				myDistantDevice->noteActivity();
 				// single-poll: send a single RANGE to the device we just polled
 				if(myDistantDevice->getIndex() == _currentPollDevice) {
@@ -1187,9 +1176,11 @@ void DW1000RangingClass::transmitPollAck(DW1000Device* myDistantDevice) {
 	// delay the same amount as ranging tag
 	DW1000Time deltaTime = DW1000Time(_replyDelayTimeUS, DW1000Time::MICROSECONDS);
 	copyShortAddress(_lastSentToShortAddress, myDistantDevice->getByteShortAddress());
-	// dedicated POLL_ACK target so the async timePollAckSent attribution can't be stolen by a later send
-	copyShortAddress(_lastPollAckShortAddress, myDistantDevice->getByteShortAddress());
-	transmit(data, deltaTime);
+	// Capture the scheduled POLL_ACK TX time per-peer NOW (setDelay returns it), so the send time is
+	// attributed synchronously to this device -- no global, no async TX-complete race across anchors.
+	myDistantDevice->timePollAckSent = DW1000.setDelay(deltaTime);
+	DW1000.setData(data, LEN_DATA);
+	DW1000.startTransmit();
 }
 
 void DW1000RangingClass::transmitRange(DW1000Device* myDistantDevice) {
@@ -1296,6 +1287,7 @@ void DW1000RangingClass::computeRangeAsymmetric(DW1000Device* myDistantDevice, D
 	DW1000Time reply2 = (myDistantDevice->timeRangeSent-myDistantDevice->timePollAckReceived).wrap();
 	
 	myTOF->setTimestamp((round1*round2-reply1*reply2)/(round1+round2+reply1+reply2));
+
 	/*
 	Serial.print("timePollAckReceived ");myDistantDevice->timePollAckReceived.print();
 	Serial.print("timePollSent ");myDistantDevice->timePollSent.print();
