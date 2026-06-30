@@ -182,8 +182,9 @@ Under role inversion the physical tag is the responder. For several anchors to r
 - **probe / bootstrap target** = a discovered tag this anchor is **not yet effective** for (covers
   bootstrap = never-measured, global candidates, weak-link reprobe). Without it an anchor could never
   start ranging an active tag it hadn't measured (it isn't in `tagForFrame` until effective → deadlock).
-- **one poll per slot**: no greedy re-poll, so an exchange never spills past the slot edge. (Anchor-slot
-  assignment and dynamic `slotsPerFrame`: §11.5.)
+- **one poll per slot**: no greedy re-poll, so an exchange never spills past the slot edge. The
+  "polled this slot" latch is keyed on `(frameIdx, slotIdx)` (phase-relative), **not** on
+  `slotNumber` — see §11.7. (Anchor-slot assignment and dynamic `slotsPerFrame`: §11.5.)
 - **no fake -120 timeout report**: a single transient timeout must not overwrite a good link and flip
   the tag to candidate (which would desync coloring/epoch).
 
@@ -197,7 +198,9 @@ Under role inversion the physical tag is the responder. For several anchors to r
   registry keeps a smoothed RXP and a hysteretic `eligible` state per link, so one noisy sample can't
   move the schedule. Result: coloring stable, anchors agree, epoch steady; a genuinely marginal link
   settles as candidate (excluded from clustering but still probed — correct for localization quality).
-  Params: `TQ_LINK_THRESH` (−85), `TQ_HYSTERESIS` (±3 dB), `TQ_EMA_ALPHA` (0.3) — pluggable.
+  Params: `TQ_LINK_THRESH` (−85), `TQ_HYSTERESIS` (±2 dB), `TQ_EMA_ALPHA` (0.8) — pluggable. (alpha
+  raised 0.3→0.8 / hysteresis 3→2 dB so the effective-anchor set tracks rxp changes faster — needed for
+  the epoch-master handoff in §11.7 to react when a master's link weakens.)
 
 > Note: if an anchor can't even **discover** a marginal tag (weak BLINK↔RANGING_INIT round-trip), that
 > is a physical-link limit (§11.6). Such a tag is ranged only by the anchors that reach it, degrading
@@ -248,3 +251,39 @@ mitigations:
   ACCURACY mode (110 k / long preamble) for sensitivity.
 - The system degrades gracefully (candidate+probe) for anchor-tag pairs that don't reach, so it keeps
   working with the anchors that do — but that tag's cluster shrinks and its position accuracy drops.
+
+### 11.7 Cluster polling fairness — epoch-robust guard, master handoff, single-TX probe (implemented)
+
+The 3-anchor cluster (A0/A1/A2 all ranging one tag in consecutive slots of an active frame) exposed two
+defects: the lowest-id anchor (A0) **monopolized** polling while A1/A2 starved, and the probe slot
+produced **negative ranges**. Both are scheduling defects (epoch alignment, slot timing and phase
+coverage all measured correct — `syncErr ≈ ±1 ms`); root causes and fixes:
+
+- **Epoch-robust poll guard (the starvation root cause).** The "one poll per slot occurrence" latch
+  keyed on `FrameSchedule::slotNumber() = (now − epoch)/slotLen`, which is monotonic **only while the
+  epoch is fixed**. A non-master anchor re-aligns on every master `SYNC` (`setEpoch(now − phase)`), so
+  its `slotNumber` is **non-monotonic** — it resets to `phase/slotLen ∈ [0, superframe/slotLen)` each
+  resync and cycles over a small range. `lastPolledSlot` (set at the last poll) is therefore revisited
+  forever → the guard spuriously matches → that anchor **never polls again**, and since the guard never
+  fires it never updates → permanent self-lock. The master never resyncs, so its `slotNumber` stays
+  monotonic → it alone keeps polling → monopoly. **Fix:** re-key the latch on `(frameIdx, slotIdx)`
+  (phase-relative, so it survives resync — phase stays continuous, jump ≈ 0) plus a `polledHere` bool
+  cleared when the slot key changes. Gates **each color-frame independently** (an anchor effective for
+  several tags polls once per its slot in each active frame). No counter / wrap detection / slot-count
+  array — two vars, library unchanged.
+- **Epoch-master handoff.** The master (whose `SYNC` everyone aligns to) is the lowest-id **effective**
+  anchor (`TagRegistry::lowestEffectiveAnchor`), not the lowest-id node — so a weak lowest-id anchor
+  can't drive cluster timing. Anchors align **only** to that master's `SYNC` (`epochMaster()`); if the
+  master's link weakens, the role hands off to the next effective anchor (hence the faster eligibility
+  in §11.3).
+- **Single-TX probe (the negative-range root cause).** A probe slot with `slotsPerFrame` collapsed to 1
+  had every ineffective anchor poll slot 0 at once → colliding POLLs corrupt the tag's leading-edge
+  timestamp → negative ranges. **Fix:** only the epoch master probes (`myAnchorSlot()==0`); the other
+  anchors learn the tag link by **overhearing** the master's exchange (`attachOverheard` → `overheard()`
+  records rxp without transmitting) and register the tag in the device list so an effective-but-unseen
+  tag is actually pollable (`searchDistantDevice` would otherwise return null → "effective but starves").
+
+**Validation (3 anchors + 1 tag, production firmware, no DIAG):** A0/A1/A2 poll the shared tag at an
+**equal rate** (≈ one success/superframe each; previously A1/A2 froze at their startup counts), with
+**0 negative / 0 huge** ranges and consistent distances (≈ 1.2–1.4 m). Diagnosed with build-flag-gated
+`SCHED_DIAG` instrumentation (per-frame/slot histograms, gate attribution), removed after verification.

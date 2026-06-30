@@ -7,7 +7,12 @@
 This is a **firmware/library-level** design for the shared ranging engine
 (`lib/mf_DW1000`), independent of which TDMA model sits above it
 ([synchronous](ARCHITECTURE_synchronous_tdma.md) or
-[distributed](ARCHITECTURE_distributed_tdma.md)). Design only — no code.
+[distributed](ARCHITECTURE_distributed_tdma.md)).
+
+**Status:** §3.1 (atomic capture) and §3.3 (single pending-TX POLL_ACK attribution) are **implemented**,
+together with the overhear hook that lets the scheduling layer learn a link by listening; §3.2 (full
+global elimination), §3.4 (sequence id) and §3.6 (stall-detect + flush) remain design-only. See §5 for
+per-step status.
 
 ---
 
@@ -193,12 +198,23 @@ firmware ever emitting a corrupted range.
 
 Apply incrementally, lowest risk first:
 
-1. **§3.1 atomic capture** — closes the dominant race; most bad values disappear immediately.
-2. **§3.2 / §3.3 global elimination** — makes cross-exchange confusion structurally impossible and
-   simplifies the code; **§3.5 exchange isolation** falls out of this.
-3. **§3.6 exchange lifecycle** — per-peer stall detection + `flush()` (handles lost frames / non-reception).
-4. **§3.4 sequence id** — completeness (also closes stale-pairing).
+1. **§3.1 atomic capture** ✅ *implemented* — `getData`+`getReceiveTimestamp` read back-to-back; closed
+   the dominant race (native broadcast garbage gone).
+2. **§3.3 single pending-TX POLL_ACK attribution** ✅ *implemented* — `timePollAckSent` taken from the
+   synchronous `setDelay()` return; removed `_lastPollAckShortAddress`. (§3.2 full global elimination of
+   `_expectedMsgId`/`_replyDelayTimeUS` → per-peer is **not yet** done; **§3.5 exchange isolation** holds
+   in practice via §3.1 + §3.3.)
+3. **§3.6 exchange lifecycle** ⬜ design-only — per-peer stall detection + `flush()` (lost frames). The
+   synchronous variant currently approximates this at the scheduling layer (`POLL_TIMEOUT_MS` clears a
+   stalled `pollTarget`); a per-peer engine-level flush is still future work.
+4. **§3.4 sequence id** ⬜ design-only — completeness (also closes stale-pairing).
+
+> **Also implemented (engine support, not a numbered step):** the **overhear hook**
+> (`attachOverheard` → `_handleOverheard`) surfaces a frame from an untracked source so a scheduling
+> layer can learn a link by listening — used by `anchor_dw1000_synchronous` for single-TX probing
+> (see [synchronous §11.7](ARCHITECTURE_synchronous_tdma.md)).
 
 Each step is independently shippable and independently verifiable on hardware (re-run with ≥2 anchors;
 the bad-sample rate should drop to zero, and a powered-off anchor's exchange should flush cleanly
-without disturbing the others).
+without disturbing the others). Verified: native broadcast and the 3-anchor synchronous cluster both
+emit **0 negative / 0 huge** ranges (§3.1 + §3.3 + the scheduling-layer fixes in synchronous §11.7).
