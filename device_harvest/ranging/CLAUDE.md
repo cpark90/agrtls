@@ -2,6 +2,8 @@
 
 이 파일은 이 리포지토리에서 작업하는 Claude Code를 위한 컨텍스트와 규칙을 정의합니다. 매 세션 시작 시 읽는다.
 결정 사항이 바뀌면 이 파일을 함께 갱신한다. (PC 모니터 쪽은 상위 CLAUDE.md를 본다.)
+코드 스타일(포맷·네이밍 등 일반 규칙)은 동반 문서 `CODESTYLE.md`를 함께 읽는다. 본 파일의
+"네이밍 규칙"은 이 프로젝트 고유의 도메인 용어/식별자만 다루고, 일반 규칙은 CODESTYLE.md를 따른다.
 
 ## 프로젝트 개요
 
@@ -108,6 +110,10 @@ DW1000과 DW3000은 **라이브러리/API/RF 파라미터가 다르다.** 한쪽
 - DW1000 설정 매직넘버는 라이브러리 상수(DW1000.CHANNEL_5 등)로 쓰고 raw 값 박지 않는다.
 
 ## 네이밍 규칙 (terminology / identifiers)
+- **포맷·일반 스타일은 `CODESTYLE.md`가 단일 진실 공급원** (Google C++/Python 기반, 매 세션 읽는다).
+  아래는 이 프로젝트 고유의 도메인 용어/식별자 규칙이며, CODESTYLE.md의 일반 규칙 위에 얹는다.
+  CODESTYLE.md도 "[지킴] 기존 코드의 지역 컨벤션이 있으면 그것을 따른다"고 하므로, 충돌 시
+  이 코드베이스의 기존 컨벤션(선행 `_` + camelCase)이 우선한다.
 - **모델 용어는 공식 표현으로 통일.** 두 TDMA 모델은 **`synchronous TDMA`**(모든 anchor가 공유
   deterministic schedule로 같은 tag를 frame 단위로 측정; 변종 `anchor_dw1000_synchronous` +
   `tag_dw1000_responder`)와 **`distributed TDMA`**(anchor들이 MGM으로 slot×channel 협상; 변종
