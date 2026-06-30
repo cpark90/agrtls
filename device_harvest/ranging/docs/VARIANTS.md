@@ -22,9 +22,9 @@ name, and the variant name are always identical.
 |---|---|---|---|---|---|
 | `anchor_dw1000_accuracy` | anchor | DW1000 | accuracy | native | Native anchor = **responder**. Address: `-D ANCHOR_ID=n` |
 | `tag_dw1000_accuracy` | tag | DW1000 | accuracy | native | Native tag = **initiator** (broadcast POLL). Address: `-D TAG_ID=n` |
-| `anchor_dw1000_window` | anchor | DW1000 | accuracy | window-TDMA | **Current** anchor = initiator: shared registry → window coloring → poll the window's tag. `-D ANCHOR_ID=n` |
-| `tag_dw1000_responder` | tag | DW1000 | accuracy | window/mesh-TDMA | Mobile tag = **responder** (replies only). Shared by both TDMA models. `-D TAG_ID=n` |
-| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | mesh-TDMA | Anchor = initiator that schedule-polls its own tags; MGM slot negotiation. Self-contained variant. `-D ANCHOR_ID=n` |
+| `anchor_dw1000_window` | anchor | DW1000 | accuracy | synchronous TDMA | **Current** anchor = initiator: shared registry → frame coloring → poll the frame's tag. `-D ANCHOR_ID=n` |
+| `tag_dw1000_responder` | tag | DW1000 | accuracy | frame/distributed TDMA | Mobile tag = **responder** (replies only). Shared by both TDMA models. `-D TAG_ID=n` |
+| `anchor_dw1000_accuracy_meshagent` | anchor | DW1000 | accuracy | distributed TDMA | Anchor = initiator that schedule-polls its own tags; MGM slot negotiation. Self-contained variant. `-D ANCHOR_ID=n` |
 | `anchor_dw3000_accuracy` | anchor | DW3000 | accuracy | — | DW3000 anchor (skeleton) |
 | `tag_dw3000_fast_filtered` | tag | DW3000 | fast | — | DW3000 fast + filtered tag (skeleton) |
 
@@ -41,11 +41,11 @@ inversion*):
 - **native**: stock library broadcast TWR. ≤4 anchors per tag (broadcast RANGE frame limit). No mesh,
   no scheduling. Library loop: `loop()`.
 - **TDMA**: role inversion + scheduled polling (`setScheduledMode(true)` + `pollDevice()`). Library
-  loops: `loopInitiator()`/`loopResponder()` (window-TDMA), `loopMeshagent()` (mesh-TDMA).
+  loops: `loopInitiator()`/`loopResponder()` (synchronous TDMA), `loopMeshagent()` (distributed TDMA).
 
 `startAsInitiator()`/`startAsResponder()` are readability aliases of `startAsTag()`/`startAsAnchor()`
-(identical behavior). Designs: [ARCHITECTURE_window_tdma.md](ARCHITECTURE_window_tdma.md) (authoritative,
-current) and [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md) (earlier model).
+(identical behavior). Designs: [ARCHITECTURE_synchronous_tdma.md](ARCHITECTURE_synchronous_tdma.md) (authoritative,
+current) and [ARCHITECTURE_distributed_tdma.md](ARCHITECTURE_distributed_tdma.md) (earlier model).
 
 ## Adding a variant
 
@@ -107,8 +107,8 @@ Shared, chip-independent (`src/common/`):
 - `range_filter.h` — EMA + outlier filter (filtered variants)
 - `mesh_link.h` — ESP-NOW control-plane transport (generic byte frame, `MESH_LINK_MAX_FRAME`)
 - `mesh_wire.h` — shared wire utils: little-endian cursors + `meshMsgType` + `SYNC` (both TDMA models)
-- `mesh_msg.h` — **window-TDMA** message: `TAGINFO` (shared-registry exchange)
-- `tag_registry.h` / `tag_quality.h` / `window_color.h` / `window_frame.h` — window-TDMA scheduling
+- `mesh_msg.h` — **synchronous TDMA** message: `TAGINFO` (shared-registry exchange)
+- `tag_registry.h` / `tag_quality.h` / `window_color.h` / `window_frame.h` — synchronous TDMA scheduling
 
 Per-variant (self-contained), in `src/anchor_dw1000_accuracy_meshagent/`:
 

@@ -1,8 +1,8 @@
-# mesh-TDMA design — deep design (CORE 1st-scope)
+# Distributed TDMA — core design (single-channel, single-slot)
 
-> Implementation-ready design for the first mesh-TDMA pass: single-channel, single-slot MGM + lease +
+> Implementation-ready design for the first distributed TDMA pass: single-channel, single-slot MGM + lease +
 > intra-anchor scheduler. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Builds on
-> [DESIGN_P3_core_mgm.md](DESIGN_P3_core_mgm.md); modules in [DESIGN_P3_modules.md](DESIGN_P3_modules.md).
+> [DESIGN_distributed_tdma_mgm.md](DESIGN_distributed_tdma_mgm.md); modules in [DESIGN_distributed_tdma_modules.md](DESIGN_distributed_tdma_modules.md).
 
 ---
 
@@ -20,8 +20,8 @@
 
 ```
 superframe = K_s slots (repeating)
-slot       = [ guard | work-window | guard ]
-            owner runs back-to-back TWR exchanges inside work-window (filled by L4)
+slot       = [ guard | work-frame | guard ]
+            owner runs back-to-back TWR exchanges inside work-frame (filled by L4)
             non-owner anchors RX-overhear during this slot (see D2)
 ```
 - Initial estimates (to be measured/locked in F-a): `K_s=16`, `slotLen≈45ms` (guard 5 + work 35 + guard 5), exchange ≈ 5–8 ms → ~4–6 TWR per slot, superframe ≈ 720 ms.
@@ -70,7 +70,7 @@ The interference neighbor set is the **union** of two detectors (conservative; c
 
 - Domain `{0..K_s-1}`, pick one slot. `cost_i = #{ j ∈ C(i) : slot_j == slot_i }`.
 - Round on the control plane, period `T_round ≈ 500 ms`:
-  1. **VALUE** send → collect neighbor VALUEs within a `T_collect` window.
+  1. **VALUE** send → collect neighbor VALUEs within a `T_collect` frame.
   2. `slot* = argmin_s #{ j ∈ C(i) : slot_j == s }` (least-occupied slot; ties → lowest index). `Δ = cost_i(slot) − cost_i(slot*)`.
   3. **GAIN** send → collect neighbor GAINs.
   4. **DECIDE**: if `Δ > 0` and `(Δ, id)` strictly exceeds every neighbor's `(Δ_j, j)` → `slot = slot*`.
@@ -102,7 +102,7 @@ The interference neighbor set is the **union** of two detectors (conservative; c
 ## I. L4 intra-anchor scheduler (the original request, concrete)
 
 ```
-during my slot (repeat across the work-window):
+during my slot (repeat across the work-frame):
   while time_left_in_window >= EXCHANGE_BUDGET:
     for t in tags: t.score += (now - t.lastPolled) * agingRate(t)
     t* = argmax score

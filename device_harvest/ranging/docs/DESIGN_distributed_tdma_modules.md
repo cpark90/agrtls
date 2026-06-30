@@ -1,8 +1,8 @@
-# mesh-TDMA design — module API
+# Distributed TDMA — module API
 
 > Function signatures + state tables for the pure, host-testable meshagent modules. Terms:
 > [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Surrounding spec:
-> [DESIGN_P3_scope1.md](DESIGN_P3_scope1.md).
+> [DESIGN_distributed_tdma_core.md](DESIGN_distributed_tdma_core.md).
 
 ---
 
@@ -29,8 +29,8 @@ class Superframe {
   uint32_t phaseMs(uint32_t nowMs) const;
   uint8_t  slotIndexNow(uint32_t nowMs) const;
   bool     isMyWorkWindow(uint32_t nowMs, uint8_t mySlot) const;   // my slot, inside work (guards excluded)
-  uint32_t workRemainingMs(uint32_t nowMs, uint8_t mySlot) const;  // 0 if not in my window
-  bool     isOthersSlot(uint32_t nowMs, uint8_t mySlot) const;     // overhear window
+  uint32_t workRemainingMs(uint32_t nowMs, uint8_t mySlot) const;  // 0 if not in my frame
+  bool     isOthersSlot(uint32_t nowMs, uint8_t mySlot) const;     // overhear frame
 };
 ```
 

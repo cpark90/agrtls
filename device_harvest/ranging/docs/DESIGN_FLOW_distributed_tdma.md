@@ -1,9 +1,9 @@
-# Design flow — mesh-TDMA (decision log)
+# Design flow — distributed TDMA (decision log)
 
-> Chronological record of how the **mesh-TDMA** design was reached, as
+> Chronological record of how the **distributed TDMA** design was reached, as
 > **Situation → Finding → Decision/pivot**. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
-Leads to [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md).
+Leads to [ARCHITECTURE_distributed_tdma.md](ARCHITECTURE_distributed_tdma.md).
 
 ---
 
@@ -69,11 +69,11 @@ Leads to [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md).
 - **New constraint**: anchor location can change.
 - **Pivot**: drop the "fixed geometry" assumption. Both nodes and edges are dynamic (a MANET). L2 does continuous neighbor sensing. **Regime-adaptive MAC**: structured TDMA (collision-free) when slow, contention (CSMA) fallback when fast. The decisive variable is the **mobility timescale**.
 
-## Pivot 11: occasional relocation + P3-centric → v4 (current)
+## Pivot 11: occasional relocation + CORE-centric → v4 (current)
 
-- **Decisions**: (1) anchors are **occasionally relocated** (slow change); (2) **P3-centric** (Foundation as prerequisite + body = P3); (3) **channels used together** (color = slot × channel); (4) **MGM confirmed**.
+- **Decisions**: (1) anchors are **occasionally relocated** (slow change); (2) **CORE-centric** (Foundation as prerequisite + body = CORE coordination); (3) **channels used together** (color = slot × channel); (4) **MGM confirmed**.
 - **Simplifications**: collision-free guarantee returns as the **primary mode**; contention is demoted to a relocation-transient safety net. Leases are long, re-coloring is event-triggered, sensing is low-rate.
-- **Output**: [`ARCHITECTURE_mesh_tdma.md`](./ARCHITECTURE_mesh_tdma.md) v4 and [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md).
+- **Output**: [`ARCHITECTURE_distributed_tdma.md`](./ARCHITECTURE_distributed_tdma.md) v4 and [`DESIGN_distributed_tdma_mgm.md`](./DESIGN_distributed_tdma_mgm.md).
 
 ---
 

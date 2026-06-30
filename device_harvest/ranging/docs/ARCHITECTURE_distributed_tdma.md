@@ -1,12 +1,12 @@
-# Architecture — mesh-TDMA
+# Architecture — distributed TDMA
 
 > The **earlier** model (the `anchor_dw1000_accuracy_meshagent` variant): each anchor schedules its own
-> tags and anchors negotiate slots via MGM over the mesh. Superseded by window-TDMA for clustering, but
+> tags and anchors negotiate slots via MGM over the mesh. Superseded by synchronous TDMA for clustering, but
 > kept. Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md).
 
 Consolidated design for **collision-free coordination of UWB distance measurement** in a multi-anchor /
-multi-tag environment. How the decisions were reached: [DESIGN_FLOW_mesh_tdma.md](DESIGN_FLOW_mesh_tdma.md).
-Detailed coordination-layer (L3/L4) design: [DESIGN_P3_core_mgm.md](DESIGN_P3_core_mgm.md).
+multi-tag environment. How the decisions were reached: [DESIGN_FLOW_distributed_tdma.md](DESIGN_FLOW_distributed_tdma.md).
+Detailed coordination-layer (L3/L4) design: [DESIGN_distributed_tdma_mgm.md](DESIGN_distributed_tdma_mgm.md).
 
 ---
 
@@ -83,12 +83,12 @@ Tags sit **outside L1–L3** entirely.
 - Self-organizing multi-hop tree, **auto-elected, self-healing root** (no dependence on a specific node; tolerates anchor power churn).
 - Coordination traffic is **low rate** (a few packets per superframe): interference neighbors, demand, slot-phase, lease/slot state.
 - Load mitigation: **pin cores** (WiFi on core 0, ranging loop on core 1), send control messages in the **slot guard interval**, **only anchors run WiFi** (zero load on tags).
-- Caveat: in esp_mesh, node-to-node traffic routes via the root → frequent local gossip can bottleneck. If needed, use a **hybrid (ESP-NOW for local gossip + esp_mesh for structure/aggregation)** (decided at P4).
+- Caveat: in esp_mesh, node-to-node traffic routes via the root → frequent local gossip can bottleneck. If needed, use a **hybrid (ESP-NOW for local gossip + esp_mesh for structure/aggregation)** (decided in the scale-out phase).
 - Aggregation promotion: later, attach one node to a router/backend → it becomes the gateway root; keep only an uplink hook in code for now.
 
 ## 8. Multi-Agent Coordination (L3, CORE) — summary
 
-Detailed in [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md). In brief:
+Detailed in [`DESIGN_distributed_tdma_mgm.md`](./DESIGN_distributed_tdma_mgm.md). In brief:
 
 - **DCOP**: each anchor is an agent owning a slot variable; constraint = interfering neighbors must differ; objective = maximize reuse + allocate slots proportional to demand.
 - **MGM**: per round, neighbors exchange current value and gain; only the strict local-max-gain agent changes → monotone, non-oscillating convergence.
@@ -106,31 +106,31 @@ Detailed in [`DESIGN_P3_core_mgm.md`](./DESIGN_P3_core_mgm.md). In brief:
 - Now: keep the `logRange` CSV format (external EKF contract); reserve only an interface for pushing results onto the mesh.
 - Later: anchor → gateway root → backend/EKF.
 
-## 11. Roadmap (P3-centric)
+## 11. Roadmap (CORE-centric)
 
-**[Foundation] (prerequisite for P3 — compressed but not skippable)**
+**[Foundation] (prerequisite for CORE — compressed but not skippable)**
 - F-a: anchor-initiated UWB polling + simple tag responder (validate the pipeline with a few nodes)
 - F-b: ESP-WIFI-MESH self-organizing (rootless) + **power/update-rate benchmark** + low-rate L2 sensing
 - F-c: dynamic **lease-based distributed coloring** (DRAND-style) + contention safety net for the relocation transient
 
-**[CORE = P3] Priority-integrated distributed multi-agent slot×channel assignment (MGM)** ← main body (§8)
+**[CORE] Priority-integrated distributed multi-agent slot×channel assignment (MGM)** ← main body (§8)
 
 **[After]**
-- P4: multi-hop scaling / ESP-NOW hybrid if local gossip bottlenecks
-- P5: gateway promotion + result aggregation (L5)
+- Scale-out: multi-hop scaling / ESP-NOW hybrid if local gossip bottlenecks
+- Aggregation: gateway promotion + result aggregation (L5)
 
 ## 12. Variant / Firmware Mapping
 
 - `anchor_dw1000_*_meshagent`: UWB polling + L1–L3 (MGM agent). Macros `FEATURE_MESH` + `FEATURE_AGENT`. (Power profile conflicts with low-power/OLED variants — beware.)
 - Tag: reuse existing simple-responder variant; only `MAX_DEVICES` is affected.
-- No coordinator/root-specific variant (auto-elected). Gateway is a P5 build flag.
+- No coordinator/root-specific variant (auto-elected). Gateway is an aggregation-phase build flag.
 - Update `VARIANTS.md` when adding variants (project rule).
 
 ## 13. Risks / Assumptions
 
 - **Relocation transient collisions**: short, absorbed by the contention safety net.
 - **Power vs mesh**: always-on WiFi is power-hungry → power-save/duty-cycle, quantify in F-b benchmark.
-- **mesh root bottleneck**: local ESP-NOW hybrid (P4).
+- **mesh root bottleneck**: local ESP-NOW hybrid (scale-out phase).
 - **Convergence vs change rate**: holds under the slow-relocation assumption; if change speeds up, the guarantee weakens and contention share grows.
 - Assumes some anchors keep the mesh alive; node locations are not fixed (occasional moves).
 

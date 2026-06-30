@@ -1,20 +1,20 @@
-# mesh-TDMA design — MGM slot coordination
+# Distributed TDMA — MGM slot coordination
 
-> Detailed design of the mesh-TDMA coordination core: distributed slot×channel assignment via MGM.
+> Detailed design of the distributed TDMA coordination core: distributed slot×channel assignment via MGM.
 > Terms: [GLOSSARY](GLOSSARY.md). Index: [README](README.md). Overview:
-> [ARCHITECTURE_mesh_tdma.md](ARCHITECTURE_mesh_tdma.md). Modules:
-> [DESIGN_P3_modules.md](DESIGN_P3_modules.md). Scope/depth: [DESIGN_P3_scope1.md](DESIGN_P3_scope1.md).
+> [ARCHITECTURE_distributed_tdma.md](ARCHITECTURE_distributed_tdma.md). Modules:
+> [DESIGN_distributed_tdma_modules.md](DESIGN_distributed_tdma_modules.md). Scope/depth: [DESIGN_distributed_tdma_core.md](DESIGN_distributed_tdma_core.md).
 
 ---
 
-## 0. P3 spans two layers (the key split)
+## 0. The design spans two layers (the key split)
 
 | Part | Where | Job | Origin |
 |---|---|---|---|
 | **L3 (inter-anchor)** | control plane (mesh) | MGM assigns slot×channel → **divides airtime among anchors** | multi-agent decision |
 | **L4-sched (intra-anchor)** | anchor local | inside its own slots, **decide which tag to poll** via aging | the **original request** |
 
-So "measure far/weak tags less often" lives in **L4-sched** (per-tag priority inside an anchor), while "a busy/healthy anchor gets more slots" lives in **L3** (demand split between anchors). Both belong to P3.
+So "measure far/weak tags less often" lives in **L4-sched** (per-tag priority inside an anchor), while "a busy/healthy anchor gets more slots" lives in **L3** (demand split between anchors). Both belong to this design.
 
 ## 1. Color domain and the channel constraint (per D5)
 

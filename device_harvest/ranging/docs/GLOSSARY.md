@@ -2,7 +2,7 @@
 
 Standard / formal terms used across the docs — UWB ranging, TDMA, and distributed-coordination
 vocabulary that a reader is expected to already recognize. **Project-specific design terms** (the
-two TDMA models, windows, the scheduling concepts, message and module names) are defined where they
+two TDMA variants, the scheduling concepts, the message and module names) are defined where they
 are used, in their design documents — not here.
 
 Index: [README.md](README.md).
@@ -33,8 +33,9 @@ Index: [README.md](README.md).
 | Term | Meaning |
 |---|---|
 | **TDMA** | Time-Division Multiple Access — nodes transmit in separate time slots to avoid collisions. |
-| **superframe** | The repeating top-level TDMA period; subdivided into slots. |
-| **slot** | One time division of the superframe; assigned to a single transmitter. |
+| **superframe** | The repeating top-level TDMA period; subdivided into frames. |
+| **frame** | A subdivision of a superframe, itself made of slots — the middle level of the TDMA hierarchy (superframe → frame → slot). |
+| **slot** | The smallest time division (one transmission opportunity); assigned to a single transmitter. |
 | **guard** | Idle margin at a slot's edges so one transmission cannot spill into the next slot. |
 | **epoch** | The time origin of the schedule; nodes align their epochs (time sync) so their slots fall at the same absolute times. |
 
