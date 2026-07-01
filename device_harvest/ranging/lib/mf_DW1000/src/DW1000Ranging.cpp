@@ -729,9 +729,13 @@ boolean DW1000RangingClass::frameForMe(byte frame[]) {
 // Initiator (mf-DW1000 _type==TAG): polls, then consumes POLL_ACK and RANGE_REPORT.
 void DW1000RangingClass::loopInitiator() {
 	checkForReset();
-	uint32_t time = millis();
-	if(time - timer > _timerDelay) { timer = time; timerTick(); }
 
+	// Process our own TX-complete (which records the POLL's transmit timestamp by re-reading the shared
+	// `data` buffer) and any RX *before* timerTick. timerTick may emit an autonomous BLINK, which
+	// overwrites `data` and the hardware last-transmit timestamp; running it first clobbers a pending
+	// POLL _sentAck so timePollSent is never recorded and stays stale from a prior cycle -> the responder
+	// then computes a wrapped round1/reply2 -> negative/huge range (seen on inactive->active, where the
+	// counterForBlink==0 timerTick that removes the inactive device also fires the BLINK). Acks first.
 	if(_sentAck) {
 		_sentAck = false;
 		int messageType = detectMessageType(data);
@@ -813,6 +817,11 @@ void DW1000RangingClass::loopInitiator() {
 			}
 		}
 	}
+
+	// timerTick (autonomous BLINK + inactive-device sweep) runs AFTER ack processing so it never clobbers
+	// a pending POLL's timePollSent (see note at the top of loopInitiator).
+	uint32_t time = millis();
+	if(time - timer > _timerDelay) { timer = time; timerTick(); }
 }
 
 // Responder (mf-DW1000 _type==ANCHOR): replies to POLL, computes the range on RANGE, reports it.
