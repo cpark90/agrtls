@@ -64,8 +64,8 @@ static uint8_t  activeW = 0;   // number of active (localization) frames = wc.nu
 
 static uint16_t pollTarget  = FC_NONE;
 static uint32_t pollStartMs = 0;
-static uint16_t curSlotKey = 0xFFFF;   // slot we currently occupy = (frameIdx<<8 | slotIdx); epoch-robust (phase-relative)
-static bool     polledHere = false;    // already fired a poll in curSlotKey? (one poll per slot occurrence)
+static uint32_t curSlotKey = 0xFFFFFFFF;   // slot-occurrence id of the slot we last polled in (see loop())
+static bool     polledHere = false;    // already fired a poll this slot occurrence? (one poll per slot)
 static uint32_t lastPublish = 0, lastRecolor = 0;
 
 static void rememberDiscovered(uint16_t tag) {
@@ -73,20 +73,17 @@ static void rememberDiscovered(uint16_t tag) {
     if (discN < MY_MEAS_MAX) disc[discN++] = tag;
 }
 
-// Known anchors (learned from SYNC fromId + self). A candidate/probe tag is NOT effective for anyone
-// (effA=0 -> slotsPerFrame collapses to 1), so without this every anchor would probe in slot 0 and
-// collide -> the lowest-id anchor wins, the rest starve, and the colliding POLLs corrupt the tag's
-// leading-edge timestamp (negative ranges). Giving each anchor a distinct probe slot removes both.
+// Known anchors (learned from every peer we hear -- SYNC fromId AND TAGINFO aid -- plus self). Used to
+// elect the epoch/probe master (epochMaster()): the lowest EFFECTIVE anchor, falling back to the lowest
+// known anchor while no link is effective yet (bootstrap / all-ineffective). Learning from TAGINFO too
+// (not SYNC only) keeps this set consistent with the shared registry, so a peer whose SYNC is lost does
+// not drop out of the election and let two anchors each think they are master (-> double probe TX,
+// colliding POLLs, negative/garbage ranges). No aging: the anchor set only grows.
 static uint16_t knownAnchors[FC_MAX_TAGS];
 static uint8_t  knownAnchorN = 0;
 static void noteAnchor(uint16_t id) {
     for (uint8_t i = 0; i < knownAnchorN; i++) if (knownAnchors[i] == id) return;
     if (knownAnchorN < FC_MAX_TAGS) knownAnchors[knownAnchorN++] = id;
-}
-static uint8_t myAnchorSlot() {   // rank of SELF among known anchors (sorted by id) -> distinct probe slot
-    uint8_t rank = 0;
-    for (uint8_t i = 0; i < knownAnchorN; i++) if (knownAnchors[i] < SELF_SHORT) rank++;
-    return rank;
 }
 // The epoch master = lowest-id EFFECTIVE anchor (so timing is driven by a participant in the active
 // cluster, not a weak lowest-id node). Everyone aligns to its SYNC; the master itself never adjusts.
@@ -140,9 +137,11 @@ static void meshPump(uint32_t now) {
             uint16_t aid;
             TagInfoEntry e[MESH_MAX_TAGINFO];
             uint8_t n;
-            if (unpackTagInfo(fr.data, fr.len, aid, e, MESH_MAX_TAGINFO, n) && aid != SELF_SHORT)
+            if (unpackTagInfo(fr.data, fr.len, aid, e, MESH_MAX_TAGINFO, n) && aid != SELF_SHORT) {
+                noteAnchor(aid);   // learn the anchor set from the registry path too, not SYNC-only
                 for (uint8_t k = 0; k < n; k++)             // peer-owned: adopt its eligibility verbatim
                     reg.reportPeer(aid, e[k].tagId, e[k].rxp_dBm, e[k].range_m, e[k].eligible, now);
+            }
             break;
         }
         case MESH_SYNC: {
@@ -238,19 +237,27 @@ void loop() {
     //    = my rank among them (collision-free, every anchor of the tag gets a distinct slot).
     //  - probe frame: best-effort, id-based slot (clustering not required for probes).
     // (one poll/slot: a greedy re-poll would spill the exchange past the slot edge into the next slot.)
-    // The "one poll per slot occurrence" latch is keyed on (frameIdx,slotIdx) -- phase-relative, so it
-    // survives epoch resync (setEpoch keeps phase continuous); entering a new slot clears the latch. This
-    // replaces the old slotNumber key, which reset on every setEpoch and spuriously blocked resync anchors.
+    // "One poll per slot occurrence" latch. The key is role-dependent, because the two failure modes are
+    // disjoint:
+    //  - The MASTER never resyncs itself (it is the epoch reference -> stable epoch), so wf.slotNumber()
+    //    is monotonic for it. Use it: it keeps advancing even when the schedule collapses to 1 frame x
+    //    1 slot (the all-ineffective probe-only state), where a phase-index key freezes at 0 and would
+    //    latch the master after a single probe -> the cluster could never re-bootstrap after link loss.
+    //  - A NON-master realigns its epoch to the master's SYNC, so slotNumber jumps around (non-monotonic)
+    //    and would double-poll a slot; the phase-relative (frameIdx,slotIdx) key stays continuous across
+    //    resync. A non-master never polls in the 1x1 state (only the master probes there), so it never
+    //    needs slotNumber's 1x1 property.
     uint8_t  k       = wf.frameIndexNow(now);
     uint8_t  curSlot = wf.slotIndexNow(now);
-    uint16_t slotKey = ((uint16_t)k << 8) | curSlot;
-    if (slotKey != curSlotKey) { curSlotKey = slotKey; polledHere = false; }   // new slot occupancy -> fresh poll
+    uint32_t slotKey = (epochMaster() == SELF_SHORT) ? wf.slotNumber(now)
+                                                     : (((uint32_t)k << 8) | curSlot);
+    if (slotKey != curSlotKey) { curSlotKey = slotKey; polledHere = false; }   // new slot occurrence -> fresh poll
     if (pollTarget == FC_NONE && wf.isWork(now) && !polledHere) {
         uint16_t target  = FC_NONE;
         if (k < activeW) {
             uint16_t t = wc.tagForFrame(reg, SELF_SHORT, k);          // the tag I effectively range
             if (t != FC_NONE && reg.anchorRank(t, SELF_SHORT) == curSlot) target = t;
-        } else if (probeN > 0 && myAnchorSlot() == 0 && curSlot == 0) {  // ONLY the epoch master probes (single TX); others overhear the tag's reply for rxp
+        } else if (probeN > 0 && epochMaster() == SELF_SHORT && curSlot == 0) {  // ONLY the epoch master probes (single TX); others overhear the tag's reply for rxp
             target = probeList[probeIdx % probeN];
             probeIdx++;
         }
